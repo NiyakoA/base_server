@@ -1,0 +1,113 @@
+{
+  "info": {
+    "name": "base_server",
+    "_postman_id": "b8a0c0a2-0000-0000-0000-000000000001",
+    "description": "Generated collection for base_server (Express + Mongo). Import into Postman or Thunder Client. Run 'Register' first, then read the OTP from MongoDB (collection: users, field: accountConfimation.token and .code) and use them in 'Confirm Registration'. Then run Login, then /me and Logout reuse the cookies that Login sets.\n\nKnown contract quirk: phoneNumber must NOT include the leading '+' — the server prepends one before parsing (see authentication.service.ts:27).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/v1" },
+    { "key": "email", "value": "test_user@example.com" },
+    { "key": "password", "value": "Test@1234" },
+    { "key": "phoneNumber", "value": "14155552671" },
+    { "key": "confirmationToken", "value": "<paste from MongoDB users.accountConfimation.token>" },
+    { "key": "confirmationCode", "value": "<paste from MongoDB users.accountConfimation.code>" }
+  ],
+  "item": [
+    {
+      "name": "GET /self (liveness)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/self", "host": ["{{baseUrl}}"], "path": ["self"] }
+      }
+    },
+    {
+      "name": "GET /health (app + system stats)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "POST /register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{email}}\",\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"password\": \"{{password}}\",\n  \"consent\": true\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/register", "host": ["{{baseUrl}}"], "path": ["register"] }
+      }
+    },
+    {
+      "name": "PATCH /registeration/confirm/:token?code=:code",
+      "request": {
+        "method": "PATCH",
+        "url": {
+          "raw": "{{baseUrl}}/registeration/confirm/{{confirmationToken}}?code={{confirmationCode}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["registeration", "confirm", "{{confirmationToken}}"],
+          "query": [{ "key": "code", "value": "{{confirmationCode}}" }]
+        }
+      }
+    },
+    {
+      "name": "POST /login (sets accessToken + refreshToken cookies)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] }
+      }
+    },
+    {
+      "name": "GET /user/me (cookie-auth)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/user/me", "host": ["{{baseUrl}}"], "path": ["user", "me"] }
+      }
+    },
+    {
+      "name": "PUT /logout (cookie-auth)",
+      "request": {
+        "method": "PUT",
+        "url": { "raw": "{{baseUrl}}/logout", "host": ["{{baseUrl}}"], "path": ["logout"] }
+      }
+    },
+    {
+      "name": "Negative — POST /login wrong password",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"Wrong@1234\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] }
+      }
+    },
+    {
+      "name": "Negative — POST /register invalid payload",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"X\",\n  \"email\": \"not-email\",\n  \"phoneNumber\": \"x\",\n  \"password\": \"short\",\n  \"consent\": false\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/register", "host": ["{{baseUrl}}"], "path": ["register"] }
+      }
+    },
+    {
+      "name": "Negative — GET /user/me no auth",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/user/me", "host": ["{{baseUrl}}"], "path": ["user", "me"] }
+      }
+    }
+  ]
+}
