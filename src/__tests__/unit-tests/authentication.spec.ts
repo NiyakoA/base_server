@@ -138,7 +138,7 @@ describe('accountConfirmationService', () => {
     const mockUser = {
         _id: '12345',
         email: 'test@example.com',
-        accountConfimation: {
+        accountConfirmation: {
             status: false,
             timestamp: null
         },
@@ -158,7 +158,7 @@ describe('accountConfirmationService', () => {
     it('should throw an error if account is already confirmed', async () => {
         ;(query.findUserByConfirmationTokenAndCode as jest.Mock).mockResolvedValue({
             ...mockUser,
-            accountConfimation: { status: true }
+            accountConfirmation: { status: true }
         })
 
         await expect(accountConfirmationService('token', 'code')).rejects.toThrow(new CustomError('Account already CONFIRMED', 400))
@@ -168,8 +168,8 @@ describe('accountConfirmationService', () => {
         ;(query.findUserByConfirmationTokenAndCode as jest.Mock).mockResolvedValue(mockUser)
         await accountConfirmationService('token', 'code')
 
-        expect(mockUser.accountConfimation.status).toBe(true)
-        expect(mockUser.accountConfimation.timestamp).toBeTruthy()
+        expect(mockUser.accountConfirmation.status).toBe(true)
+        expect(mockUser.accountConfirmation.timestamp).toBeTruthy()
         expect(mockSave).toHaveBeenCalledTimes(1)
         expect(emailService.sendEmail).toHaveBeenCalledWith([mockUser.email], 'Welcome to the base! ', 'Account has been confirmed.')
     })

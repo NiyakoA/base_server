@@ -24,7 +24,8 @@ export const registrationService = async (payload: IRegisterRequest) => {
     const { name, phoneNumber, email, password } = payload
 
     // Parsing and validating phone number
-    const { countryCode, internationalNumber, isoCode } = parsers.parsePhoneNumber('+' + phoneNumber)
+    const normalizedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber
+    const { countryCode, internationalNumber, isoCode } = parsers.parsePhoneNumber(normalizedPhone)
     if (!countryCode || !internationalNumber || !isoCode) {
         throw new CustomError(responseMessage.auth.INVALID_PHONE_NUMBER, 422)
     }
@@ -41,7 +42,7 @@ export const registrationService = async (payload: IRegisterRequest) => {
     //Encrypting password
     const hashedPassword = await hashing.hashPassword(password)
 
-    //Account confimation token and code generation
+    //Account confirmation token and code generation
     const token = code.generateRandomId()
     const OTP = code.generateOTP(6)
 
@@ -53,7 +54,7 @@ export const registrationService = async (payload: IRegisterRequest) => {
             isoCode,
             internationalNumber
         },
-        accountConfimation: {
+        accountConfirmation: {
             status: false,
             token,
             code: OTP,
@@ -74,11 +75,11 @@ export const registrationService = async (payload: IRegisterRequest) => {
     //adding user to db
     const newUser = await query.createUser(userObj)
 
-    //Sending confimation emails
-    const confimationURL = `Frontendhost/confimation/${token}?code=${OTP}`
+    //Sending confirmation emails
+    const confirmationURL = `${config.FRONTEND_URL}/confirmation/${token}?code=${OTP}`
     const to = [email]
     const subject = `Confirm your account`
-    const text = `Hey ${name}, Please confirm your account by clicking the link belown\n\n${confimationURL}`
+    const text = `Hey ${name}, Please confirm your account by clicking the link belown\n\n${confirmationURL}`
 
     emailService.sendEmail(to, subject, text).catch((error) => {
         logger.error('Error sending email', {
@@ -100,17 +101,17 @@ export const accountConfirmationService = async (token: string, code: string) =>
     }
 
     //Check if account is already confirmed
-    if (user.accountConfimation.status) {
+    if (user.accountConfirmation.status) {
         throw new CustomError(responseMessage.auth.ALREADY_CONFIRMED('Account'), 400)
     }
 
     //if not, lets confirm
-    user.accountConfimation.status = true
-    user.accountConfimation.timestamp = dayjs().utc().toDate()
+    user.accountConfirmation.status = true
+    user.accountConfirmation.timestamp = dayjs().utc().toDate()
 
     await user.save()
 
-    //Sending confimation emails
+    //Sending confirmation emails
     const to = [user.email]
     const subject = `Welcome to the base! `
     const text = `Account has been confirmed.`
@@ -132,7 +133,7 @@ export const loginService = async (payload: ILoginRequest) => {
     const { email, password } = payload
 
     //Check if the user is registered
-    const user = await query.findUserByEmail(email, 'password')
+    const user = await query.findUserByEmail(email, '+password')
     if (!user) {
         throw new CustomError(responseMessage.NOT_FOUND('User'), 404)
     }
@@ -141,6 +142,11 @@ export const loginService = async (payload: ILoginRequest) => {
     const isValidPassword = await hashing.comparePassword(password, user.password)
     if (!isValidPassword) {
         throw new CustomError(responseMessage.auth.INVALID_EMAIL_OR_PASSWORD, 400)
+    }
+
+    //Check if account is confirmed
+    if (!user.accountConfirmation.status) {
+        throw new CustomError(responseMessage.auth.ACCOUNT_NOT_CONFIRMED, 403)
     }
 
     //Genrate tokens
@@ -157,9 +163,12 @@ export const loginService = async (payload: ILoginRequest) => {
     }
     await tokenRepository.createToken(token)
 
+    const userObj = user.toObject()
+    delete (userObj as unknown as Record<string, unknown>).password
+
     return {
         success: true,
-        user: user,
+        user: userObj,
         accessToken: accessToken,
         refreshToken: refreshToken
     }
