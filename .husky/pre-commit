@@ -1,1 +1,2 @@
+export PATH="/c/Program Files/nodejs:/c/Users/ASSIG/AppData/Roaming/npm:$PATH"
 npx lint-staged
