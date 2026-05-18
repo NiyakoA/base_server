@@ -45,7 +45,7 @@ export default {
 
             const user = await accountConfirmationService(token, code)
 
-            httpResponse(response, request, 201, responseMessage.auth.USER_REGISTERED, user)
+            httpResponse(response, request, 200, responseMessage.auth.ACCOUNT_CONFIRMED, user)
         } catch (error) {
             if (error instanceof CustomError) {
                 httpError(next, error, request, error.statusCode)

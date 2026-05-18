@@ -2,6 +2,16 @@ node_modules
 
 dist
 
+.env
 .env.development
 .env.production
 .env.test
+
+.claude/
+
+# Tesseract language data (downloaded at runtime)
+*.traineddata
+tessdata/
+
+# Logs
+logs/*.log

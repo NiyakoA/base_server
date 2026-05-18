@@ -45,7 +45,7 @@ const userSchema = new mongoose.Schema<IUser>(
             enum: EUserRoles,
             required: true
         },
-        accountConfimation: {
+        accountConfirmation: {
             _id: false,
             status: {
                 type: Boolean,
@@ -54,15 +54,15 @@ const userSchema = new mongoose.Schema<IUser>(
             },
             token: {
                 type: String,
-                rquired: true
+                required: true
             },
             code: {
                 type: String,
-                rquired: true
+                required: true
             },
             timestamp: {
                 type: Date,
-                rquired: true
+                default: null
             }
         },
         passwordReset: {

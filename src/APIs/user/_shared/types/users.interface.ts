@@ -11,7 +11,7 @@ export interface IUser {
     timezone: string
     password: string
     role: EUserRoles
-    accountConfimation: {
+    accountConfirmation: {
         status: boolean
         token: string
         code: string
