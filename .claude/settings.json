@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(\\(Get-Acl \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.3\\\\data\"\\).Access | Where-Object { $_.IdentityReference -match 'NetworkService' } | Format-Table IdentityReference, FileSystemRights, AccessControlType -AutoSize; \"---\"; \\(Get-Acl \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.3\\\\log\"\\).Access | Where-Object { $_.IdentityReference -match 'NetworkService' } | Format-Table IdentityReference, FileSystemRights, AccessControlType -AutoSize)",
+      "PowerShell(Get-Service MongoDB | Select-Object Status, Name, StartType; \"---\"; $log = \"C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.3\\\\log\\\\mongod.log\"; if \\(Test-Path $log\\) { \"--- last 30 lines of mongod.log ---\"; Get-Content $log -Tail 30 } else { 'log still does not exist' }; \"---\"; \"data dir items: $\\(@\\(Get-ChildItem 'C:\\\\Program Files\\\\MongoDB\\\\Server\\\\8.3\\\\data' -Force -ErrorAction SilentlyContinue\\).Count\\)\")"
+    ]
+  }
+}
