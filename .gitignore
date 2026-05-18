@@ -7,8 +7,11 @@ dist
 .env.production
 .env.test
 
-.claude/settings.local.json
+.claude/
 
 # Tesseract language data (downloaded at runtime)
 *.traineddata
 tessdata/
+
+# Logs
+logs/*.log
