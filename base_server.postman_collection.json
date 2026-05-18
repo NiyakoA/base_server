@@ -1,31 +1,31 @@
 {
   "info": {
     "name": "base_server",
-    "_postman_id": "b8a0c0a2-0000-0000-0000-000000000001",
-    "description": "Collection for base_server (Express + Mongo + OCR). Import into Postman or Thunder Client. Run 'Register' first, then read the OTP from MongoDB (collection: users, field: accountConfirmation.token and .code) and use them in 'Confirm Registration'. Then run Login — the accessToken cookie is set automatically and used by all authenticated requests (/me, /logout, /ocr/extract).\n\nphoneNumber accepts both '+14155552671' and '14155552671' formats.",
+    "_postman_id": "b8a0c0a2-1234-5678-abcd-000000000001",
+    "description": "Collection for base_server (Express + Mongo + OCR). Run Register → Confirm → Login in order. The accessToken cookie set by Login is used automatically by /me, /logout, and /ocr/extract.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000/v1" },
+    { "key": "host", "value": "http://localhost:3000" },
     { "key": "email", "value": "test_user@example.com" },
     { "key": "password", "value": "Test@1234" },
     { "key": "phoneNumber", "value": "14155552671" },
-    { "key": "confirmationToken", "value": "<paste from MongoDB users.accountConfirmation.token>" },
-    { "key": "confirmationCode", "value": "<paste from MongoDB users.accountConfirmation.code>" }
+    { "key": "confirmationToken", "value": "" },
+    { "key": "confirmationCode", "value": "" }
   ],
   "item": [
     {
       "name": "GET /self (liveness)",
       "request": {
         "method": "GET",
-        "url": { "raw": "{{baseUrl}}/self", "host": ["{{baseUrl}}"], "path": ["self"] }
+        "url": "{{host}}/v1/self"
       }
     },
     {
       "name": "GET /health (app + system stats)",
       "request": {
         "method": "GET",
-        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+        "url": "{{host}}/v1/health"
       }
     },
     {
@@ -35,78 +35,47 @@
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
+          "options": { "raw": { "language": "json" } },
           "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"{{email}}\",\n  \"phoneNumber\": \"{{phoneNumber}}\",\n  \"password\": \"{{password}}\",\n  \"consent\": true\n}"
         },
-        "url": { "raw": "{{baseUrl}}/register", "host": ["{{baseUrl}}"], "path": ["register"] }
+        "url": "{{host}}/v1/register"
       }
     },
     {
-      "name": "PATCH /registeration/confirm/:token?code=:code",
+      "name": "PATCH /registeration/confirm/:token",
       "request": {
         "method": "PATCH",
         "url": {
-          "raw": "{{baseUrl}}/registeration/confirm/{{confirmationToken}}?code={{confirmationCode}}",
-          "host": ["{{baseUrl}}"],
-          "path": ["registeration", "confirm", "{{confirmationToken}}"],
+          "raw": "{{host}}/v1/registeration/confirm/{{confirmationToken}}?code={{confirmationCode}}",
           "query": [{ "key": "code", "value": "{{confirmationCode}}" }]
         }
       }
     },
     {
-      "name": "POST /login (sets accessToken + refreshToken cookies)",
+      "name": "POST /login",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
+          "options": { "raw": { "language": "json" } },
           "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
         },
-        "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] }
+        "url": "{{host}}/v1/login"
       }
     },
     {
       "name": "GET /user/me (cookie-auth)",
       "request": {
         "method": "GET",
-        "url": { "raw": "{{baseUrl}}/user/me", "host": ["{{baseUrl}}"], "path": ["user", "me"] }
+        "url": "{{host}}/v1/user/me"
       }
     },
     {
       "name": "PUT /logout (cookie-auth)",
       "request": {
         "method": "PUT",
-        "url": { "raw": "{{baseUrl}}/logout", "host": ["{{baseUrl}}"], "path": ["logout"] }
-      }
-    },
-    {
-      "name": "Negative — POST /login wrong password",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"Wrong@1234\"\n}"
-        },
-        "url": { "raw": "{{baseUrl}}/login", "host": ["{{baseUrl}}"], "path": ["login"] }
-      }
-    },
-    {
-      "name": "Negative — POST /register invalid payload",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"name\": \"X\",\n  \"email\": \"not-email\",\n  \"phoneNumber\": \"x\",\n  \"password\": \"short\",\n  \"consent\": false\n}"
-        },
-        "url": { "raw": "{{baseUrl}}/register", "host": ["{{baseUrl}}"], "path": ["register"] }
-      }
-    },
-    {
-      "name": "Negative — GET /user/me no auth",
-      "request": {
-        "method": "GET",
-        "url": { "raw": "{{baseUrl}}/user/me", "host": ["{{baseUrl}}"], "path": ["user", "me"] }
+        "url": "{{host}}/v1/logout"
       }
     },
     {
@@ -119,13 +88,46 @@
             {
               "key": "image",
               "type": "file",
-              "src": "",
-              "description": "Select a JPEG, PNG, WebP, or TIFF image file (max 10 MB)"
+              "src": [],
+              "description": "Pick a JPEG, PNG, WebP, or TIFF image (max 10 MB)"
             }
           ]
         },
-        "url": { "raw": "{{baseUrl}}/ocr/extract", "host": ["{{baseUrl}}"], "path": ["ocr", "extract"] },
-        "description": "Requires a valid accessToken cookie from POST /login. Upload an image file under the 'image' form field. Returns { text, confidence, processingTimeMs }."
+        "url": "{{host}}/v1/ocr/extract",
+        "description": "Requires accessToken cookie from POST /login. Returns { text, confidence, processingTimeMs }."
+      }
+    },
+    {
+      "name": "Negative — POST /login wrong password",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"Wrong@1234\"\n}"
+        },
+        "url": "{{host}}/v1/login"
+      }
+    },
+    {
+      "name": "Negative — POST /register invalid payload",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"name\": \"X\",\n  \"email\": \"not-email\",\n  \"phoneNumber\": \"x\",\n  \"password\": \"short\",\n  \"consent\": false\n}"
+        },
+        "url": "{{host}}/v1/register"
+      }
+    },
+    {
+      "name": "Negative — GET /user/me no auth",
+      "request": {
+        "method": "GET",
+        "url": "{{host}}/v1/user/me"
       }
     },
     {
@@ -135,28 +137,10 @@
         "body": {
           "mode": "formdata",
           "formdata": [
-            { "key": "image", "type": "file", "src": "" }
+            { "key": "image", "type": "file", "src": [] }
           ]
         },
-        "url": { "raw": "{{baseUrl}}/ocr/extract", "host": ["{{baseUrl}}"], "path": ["ocr", "extract"] }
-      }
-    },
-    {
-      "name": "Negative — POST /ocr/extract wrong file type",
-      "request": {
-        "method": "POST",
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "image",
-              "type": "file",
-              "src": "",
-              "description": "Upload a .pdf or other non-image file to test 422 rejection"
-            }
-          ]
-        },
-        "url": { "raw": "{{baseUrl}}/ocr/extract", "host": ["{{baseUrl}}"], "path": ["ocr", "extract"] }
+        "url": "{{host}}/v1/ocr/extract"
       }
     }
   ]
