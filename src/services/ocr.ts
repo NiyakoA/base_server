@@ -1,7 +1,10 @@
 import path from 'path'
 import sharp from 'sharp'
 import { createWorker } from 'tesseract.js'
-import logger from '../handlers/logger'
+// require() bypasses ts-jest's __importDefault wrapping, which double-nests
+// the default export when the Jest mock factory omits __esModule:true.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const logger = (require('../handlers/logger') as { default: typeof import('../handlers/logger').default }).default
 
 const TESSDATA_DIR = path.join(process.cwd(), 'tessdata')
 const HIGH_CONFIDENCE_THRESHOLD = 85

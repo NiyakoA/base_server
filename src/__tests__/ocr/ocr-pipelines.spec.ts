@@ -1,12 +1,9 @@
-jest.mock('../../handlers/logger', () => {
-    return {
-        __esModule: true,
-        default: { info: jest.fn(), error: jest.fn() }
-    }
-})
-
 import { createWorker } from 'tesseract.js'
 import { extractText, IOcrResult } from '../../services/ocr'
+
+jest.mock('../../handlers/logger', () => ({
+    default: { info: jest.fn(), error: jest.fn() }
+}))
 
 jest.mock('sharp', () => {
     const instance = {
