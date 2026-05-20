@@ -40,6 +40,15 @@ describe('extractText', () => {
         })
     })
 
+    it('throws 422 when the TrOCR service reports no image provided', async () => {
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 422 })
+
+        await expect(extractText(fakeBuffer)).rejects.toMatchObject({
+            message: 'No image provided',
+            statusCode: 422
+        })
+    })
+
     it('throws 500 when the TrOCR service returns an error response', async () => {
         mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
 
