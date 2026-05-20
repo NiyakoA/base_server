@@ -1,8 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { checkSession, logout } from '@/lib/auth'
+import { useState } from 'react'
 import { apiUpload } from '@/lib/api'
 import ImageUploader from '@/components/ImageUploader'
 import OcrResult from '@/components/OcrResult'
@@ -21,18 +19,9 @@ const ERROR_MESSAGES: Record<number, string> = {
 }
 
 export default function OcrPage() {
-    const router = useRouter()
     const [result, setResult] = useState<OcrData | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
-    const [checking, setChecking] = useState(true)
-
-    useEffect(() => {
-        checkSession().then(ok => {
-            if (!ok) router.push('/login')
-            else setChecking(false)
-        })
-    }, [router])
 
     async function handleUpload(file: File) {
         setError(null)
@@ -46,40 +35,22 @@ export default function OcrPage() {
             setResult(res.data)
         } catch (err) {
             const status = (err as Error & { status?: number }).status ?? 500
-            if (status === 401) { router.push('/login'); return }
             setError(ERROR_MESSAGES[status] ?? ERROR_MESSAGES[500])
         } finally {
             setLoading(false)
         }
     }
 
-    async function handleLogout() {
-        await logout()
-        router.push('/login')
-    }
-
-    if (checking) return null
-
     return (
         <div className="max-w-lg mx-auto px-4 py-8">
-            <div className="bg-[#16213e] rounded-lg px-4 py-3 mb-6 flex justify-between items-center">
+            <div className="bg-[#16213e] rounded-lg px-4 py-3 mb-6">
                 <span className="text-[#4cc9f0] font-bold">✦ OCR Extract</span>
-                <button
-                    onClick={handleLogout}
-                    className="text-[#e94560] hover:underline text-xs"
-                >
-                    logout
-                </button>
             </div>
 
             <div className="flex flex-col gap-4">
                 <ImageUploader onUpload={handleUpload} disabled={loading} />
-                {loading && (
-                    <p className="text-center text-sm text-[#aaa]">Extracting...</p>
-                )}
-                {error && (
-                    <p className="text-center text-sm text-[#e94560]">{error}</p>
-                )}
+                {loading && <p className="text-center text-sm text-[#aaa]">Extracting...</p>}
+                {error && <p className="text-center text-sm text-[#e94560]">{error}</p>}
                 {result && <OcrResult {...result} />}
             </div>
         </div>
