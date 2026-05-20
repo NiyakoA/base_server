@@ -17,7 +17,8 @@ interface BatchItem {
 const ERROR_MESSAGES: Record<number, string> = {
     413: 'File too large — max 10 MB per file',
     422: 'No images provided',
-    500: 'Extraction failed — try a clearer image'
+    503: 'OCR service unavailable — make sure the Python TrOCR service is running',
+    500: 'OCR processing failed'
 }
 
 export default function OcrPage() {

@@ -14,6 +14,11 @@ export default function OcrResult({ text, confidence, pipeline, processingTimeMs
                     {filename}
                 </p>
             )}
+            {confidence < 30 && (
+                <p className="text-[#f6ad55] text-xs mb-2">
+                    ⚠ Low confidence — image may be unclear, lighting poor, or handwriting hard to read
+                </p>
+            )}
             <p className="text-[#4cc9f0] text-xs uppercase mb-2">Extracted Text</p>
             <p className="text-sm text-[#ccc] leading-relaxed whitespace-pre-wrap min-h-[80px]">
                 {text || '—'}
