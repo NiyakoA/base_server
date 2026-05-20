@@ -1,5 +1,5 @@
-import { createWorker } from 'tesseract.js'
 import { extractText, IOcrResult } from '../../services/ocr'
+import * as pool from '../../services/ocr-pool'
 
 jest.mock('../../handlers/logger', () => ({
     default: { info: jest.fn(), error: jest.fn() }
@@ -14,7 +14,7 @@ jest.mock('sharp', () => {
         blur: jest.fn().mockReturnThis(),
         gamma: jest.fn().mockReturnThis(),
         resize: jest.fn().mockReturnThis(),
-        // metadata returns large dimensions so the upscale step is skipped in tests
+        // Returns large dimensions so the upscale step is skipped in tests
         metadata: jest.fn().mockResolvedValue({ width: 3000, height: 2000 }),
         toBuffer: jest.fn().mockResolvedValue(Buffer.from('processed'))
     }
@@ -27,18 +27,30 @@ jest.mock('sharp', () => {
 })
 
 jest.mock('tesseract.js', () => ({
-    createWorker: jest.fn(),
     PSM: { SINGLE_BLOCK: '6', SPARSE_TEXT: '11' }
 }))
 
-const mockCreateWorker = createWorker as jest.MockedFunction<typeof createWorker>
+// Mock the pool so tests don't require real Tesseract workers
+jest.mock('../../services/ocr-pool', () => ({
+    acquire: jest.fn(),
+    release: jest.fn()
+}))
 
-// Pipelines execute in this order (preprocessing × PSM):
-// baseline-psm6, baseline-psm11, binarize-psm6, binarize-psm11,
-// denoise-psm6, denoise-psm11, high-contrast-psm6, high-contrast-psm11
-// One worker is created per extractText call; setParameters is called before each recognize.
+const mockAcquire = pool.acquire as jest.MockedFunction<typeof pool.acquire>
+const mockRelease = pool.release as jest.MockedFunction<typeof pool.release>
+
+// Pipeline order: baseline-psm6, baseline-psm11, binarize-psm6, binarize-psm11,
+//                 denoise-psm6, denoise-psm11, high-contrast-psm6, high-contrast-psm11
+// One PoolWorker is acquired per extractText call and released in finally.
 describe('extractText', () => {
     const fakeBuffer = Buffer.from('fake-image')
+
+    function makePoolWorker(recognize: jest.Mock) {
+        const setParameters = jest.fn().mockResolvedValue(undefined)
+        const pw = { worker: { recognize, setParameters }, busy: false }
+        mockAcquire.mockResolvedValue(pw as never)
+        return { pw, setParameters }
+    }
 
     afterEach(() => jest.clearAllMocks())
 
@@ -49,9 +61,7 @@ describe('extractText', () => {
             .mockResolvedValueOnce({ data: { text: 'baseline-psm6 text', confidence: 60 } })
             .mockResolvedValueOnce({ data: { text: 'baseline-psm11 text', confidence: 75 } })
             .mockResolvedValueOnce({ data: { text: 'binarize-psm6 text', confidence: 90 } })
-        const setParameters = jest.fn().mockResolvedValue(undefined)
-        const terminate = jest.fn().mockResolvedValue(undefined)
-        mockCreateWorker.mockResolvedValue({ recognize, setParameters, terminate } as unknown as Awaited<ReturnType<typeof createWorker>>)
+        const { pw, setParameters } = makePoolWorker(recognize)
 
         const result: IOcrResult = await extractText(fakeBuffer)
 
@@ -60,6 +70,7 @@ describe('extractText', () => {
         expect(result.pipeline).toBe('binarize-psm6')
         expect(recognize).toHaveBeenCalledTimes(3)
         expect(setParameters).toHaveBeenCalledTimes(3)
+        expect(mockRelease).toHaveBeenCalledWith(pw)
     })
 
     it('runs all 8 pipelines and returns the best when none exceeds threshold', async () => {
@@ -73,9 +84,7 @@ describe('extractText', () => {
             .mockResolvedValueOnce({ data: { text: 'text f', confidence: 55 } }) // denoise-psm11
             .mockResolvedValueOnce({ data: { text: 'text g', confidence: 60 } }) // high-contrast-psm6
             .mockResolvedValueOnce({ data: { text: 'text h', confidence: 45 } }) // high-contrast-psm11
-        const setParameters = jest.fn().mockResolvedValue(undefined)
-        const terminate = jest.fn().mockResolvedValue(undefined)
-        mockCreateWorker.mockResolvedValue({ recognize, setParameters, terminate } as unknown as Awaited<ReturnType<typeof createWorker>>)
+        const { pw } = makePoolWorker(recognize)
 
         const result: IOcrResult = await extractText(fakeBuffer)
 
@@ -83,16 +92,14 @@ describe('extractText', () => {
         expect(result.confidence).toBe(72)
         expect(result.pipeline).toBe('baseline-psm11')
         expect(recognize).toHaveBeenCalledTimes(8)
-        expect(setParameters).toHaveBeenCalledTimes(8)
+        expect(mockRelease).toHaveBeenCalledWith(pw)
     })
 
-    it('always terminates the worker — even if a pipeline throws', async () => {
+    it('releases the worker even when a pipeline throws', async () => {
         const recognize = jest.fn().mockRejectedValue(new Error('tesseract failure'))
-        const setParameters = jest.fn().mockResolvedValue(undefined)
-        const terminate = jest.fn().mockResolvedValue(undefined)
-        mockCreateWorker.mockResolvedValue({ recognize, setParameters, terminate } as unknown as Awaited<ReturnType<typeof createWorker>>)
+        const { pw } = makePoolWorker(recognize)
 
         await expect(extractText(fakeBuffer)).rejects.toThrow('tesseract failure')
-        expect(terminate).toHaveBeenCalledTimes(1)
+        expect(mockRelease).toHaveBeenCalledWith(pw)
     })
 })
