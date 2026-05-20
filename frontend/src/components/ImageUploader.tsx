@@ -3,21 +3,23 @@
 import { useRef, useState, DragEvent } from 'react'
 
 interface Props {
-    onUpload: (file: File) => void
+    onUpload: (files: File[]) => void
     disabled?: boolean
+    multiple?: boolean
 }
 
-export default function ImageUploader({ onUpload, disabled }: Props) {
+export default function ImageUploader({ onUpload, disabled, multiple = false }: Props) {
     const inputRef = useRef<HTMLInputElement>(null)
     const [dragging, setDragging] = useState(false)
 
     function handleFiles(files: FileList | null) {
         if (!files || files.length === 0) return
-        onUpload(files[0])
+        onUpload(Array.from(files))
     }
 
     function onDrop(e: DragEvent) {
         e.preventDefault()
+        if (disabled) return
         setDragging(false)
         handleFiles(e.dataTransfer.files)
     }
@@ -25,7 +27,7 @@ export default function ImageUploader({ onUpload, disabled }: Props) {
     return (
         <div
             onClick={() => !disabled && inputRef.current?.click()}
-            onDragOver={e => { e.preventDefault(); setDragging(true) }}
+            onDragOver={e => { e.preventDefault(); if (!disabled) setDragging(true) }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             className={[
@@ -35,12 +37,17 @@ export default function ImageUploader({ onUpload, disabled }: Props) {
             ].join(' ')}
         >
             <div className="text-3xl mb-2">📄</div>
-            <p className="text-sm text-[#aaa]">Drop image here or click to upload</p>
-            <p className="text-xs text-[#555] mt-1">PNG, JPG, WEBP, TIFF · max 10 MB</p>
+            <p className="text-sm text-[#aaa]">
+                {multiple ? 'Drop images here or click to upload' : 'Drop image here or click to upload'}
+            </p>
+            <p className="text-xs text-[#555] mt-1">
+                PNG, JPG, WEBP, TIFF · max 10 MB{multiple ? ' · multiple files supported' : ''}
+            </p>
             <input
                 ref={inputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/tiff"
+                multiple={multiple}
                 className="hidden"
                 onChange={e => handleFiles(e.target.files)}
                 disabled={disabled}

@@ -5,7 +5,9 @@ import { apiUpload } from '@/lib/api'
 import ImageUploader from '@/components/ImageUploader'
 import OcrResult from '@/components/OcrResult'
 
-interface OcrData {
+interface BatchItem {
+    originalname: string
+    index: number
     text: string
     confidence: number
     pipeline: string
@@ -13,45 +15,57 @@ interface OcrData {
 }
 
 const ERROR_MESSAGES: Record<number, string> = {
-    413: 'File too large — max 10 MB',
-    422: 'No image provided',
+    413: 'File too large — max 10 MB per file',
+    422: 'No images provided',
     500: 'Extraction failed — try a clearer image'
 }
 
 export default function OcrPage() {
-    const [result, setResult] = useState<OcrData | null>(null)
+    const [results, setResults] = useState<BatchItem[]>([])
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
+    const [progress, setProgress] = useState('')
 
-    async function handleUpload(file: File) {
+    async function handleUpload(files: File[]) {
         setError(null)
-        setResult(null)
+        setResults([])
         setLoading(true)
+        setProgress(files.length > 1 ? `Processing ${files.length} files...` : 'Extracting...')
 
         try {
             const form = new FormData()
-            form.append('image', file)
-            const res = await apiUpload<OcrData>('/v1/ocr/extract', form)
-            setResult(res.data)
+            files.forEach(f => form.append('images', f))
+            const res = await apiUpload<BatchItem[]>('/v1/ocr/batch', form)
+            setResults(res.data)
         } catch (err) {
             const status = (err as Error & { status?: number }).status ?? 500
             setError(ERROR_MESSAGES[status] ?? ERROR_MESSAGES[500])
         } finally {
             setLoading(false)
+            setProgress('')
         }
     }
 
     return (
-        <div className="max-w-lg mx-auto px-4 py-8">
+        <div className="max-w-2xl mx-auto px-4 py-8">
             <div className="bg-[#16213e] rounded-lg px-4 py-3 mb-6">
                 <span className="text-[#4cc9f0] font-bold">✦ OCR Extract</span>
             </div>
 
             <div className="flex flex-col gap-4">
-                <ImageUploader onUpload={handleUpload} disabled={loading} />
-                {loading && <p className="text-center text-sm text-[#aaa]">Extracting...</p>}
+                <ImageUploader onUpload={handleUpload} disabled={loading} multiple />
+                {loading && <p className="text-center text-sm text-[#aaa]">{progress}</p>}
                 {error && <p className="text-center text-sm text-[#e94560]">{error}</p>}
-                {result && <OcrResult {...result} />}
+                {results.map(item => (
+                    <OcrResult
+                        key={item.index}
+                        text={item.text}
+                        confidence={item.confidence}
+                        pipeline={item.pipeline}
+                        processingTimeMs={item.processingTimeMs}
+                        filename={results.length > 1 ? item.originalname : undefined}
+                    />
+                ))}
             </div>
         </div>
     )
