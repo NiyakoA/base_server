@@ -4,40 +4,62 @@ import { createWorker } from 'tesseract.js'
 import logger from '../handlers/logger'
 
 const TESSDATA_DIR = path.join(process.cwd(), 'tessdata')
+const HIGH_CONFIDENCE_THRESHOLD = 85
 
 export interface IOcrResult {
     text: string
     confidence: number
     processingTimeMs: number
+    pipeline: string
 }
 
-const preprocessImage = (buffer: Buffer): Promise<Buffer> => {
-    return sharp(buffer)
-        .greyscale()
-        .normalise()
-        .sharpen()
-        .toBuffer()
-}
+type Pipeline = { name: string; fn: (buf: Buffer) => Promise<Buffer> }
+
+const PIPELINES: Pipeline[] = [
+    {
+        name: 'baseline',
+        fn: (buf) => sharp(buf).greyscale().normalise().sharpen().toBuffer()
+    },
+    {
+        name: 'binarize',
+        fn: (buf) => sharp(buf).greyscale().normalise().threshold(128).sharpen().toBuffer()
+    },
+    {
+        name: 'denoise',
+        fn: (buf) => sharp(buf).greyscale().blur(0.5).normalise().sharpen().toBuffer()
+    },
+    {
+        name: 'high-contrast',
+        fn: (buf) => sharp(buf).greyscale().gamma(1.5).normalise().sharpen().toBuffer()
+    }
+]
 
 export const extractText = async (imageBuffer: Buffer): Promise<IOcrResult> => {
     const start = Date.now()
-
-    const preprocessed = await preprocessImage(imageBuffer)
-
     const worker = await createWorker('eng', 1, { cachePath: TESSDATA_DIR })
+
     try {
-        const { data } = await worker.recognize(preprocessed)
+        let best = { text: '', confidence: 0, pipeline: '' }
+
+        for (const { name, fn } of PIPELINES) {
+            const preprocessed = await fn(imageBuffer)
+            const { data } = await worker.recognize(preprocessed)
+            const confidence = Math.round(data.confidence)
+
+            if (confidence > best.confidence) {
+                best = { text: data.text.trim(), confidence, pipeline: name }
+            }
+
+            if (best.confidence >= HIGH_CONFIDENCE_THRESHOLD) break
+        }
+
         const processingTimeMs = Date.now() - start
 
         logger.info('OCR extraction complete', {
-            meta: { confidence: data.confidence, processingTimeMs }
+            meta: { confidence: best.confidence, pipeline: best.pipeline, processingTimeMs }
         })
 
-        return {
-            text: data.text.trim(),
-            confidence: Math.round(data.confidence),
-            processingTimeMs
-        }
+        return { ...best, processingTimeMs }
     } finally {
         await worker.terminate()
     }

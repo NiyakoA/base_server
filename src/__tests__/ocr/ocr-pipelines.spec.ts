@@ -1,9 +1,5 @@
-import { createWorker } from 'tesseract.js'
-import { extractText, IOcrResult } from '../../services/ocr'
-
-jest.mock('../../handlers/logger', () => ({
-    default: { info: jest.fn(), error: jest.fn() }
-}))
+jest.mock('../../handlers/logger')
+jest.mock('tesseract.js', () => ({ createWorker: jest.fn() }))
 
 jest.mock('sharp', () => {
     const instance = {
@@ -14,12 +10,18 @@ jest.mock('sharp', () => {
         blur: jest.fn().mockReturnThis(),
         gamma: jest.fn().mockReturnThis(),
         toBuffer: jest.fn().mockResolvedValue(Buffer.from('processed'))
-        // extra methods for the 4 pipeline variants (used in Task 2 implementation)
     }
     return jest.fn(() => instance)
 })
 
-jest.mock('tesseract.js', () => ({ createWorker: jest.fn() }))
+import { createWorker } from 'tesseract.js'
+import logger from '../../handlers/logger'
+import { extractText, IOcrResult } from '../../services/ocr'
+
+// Setup logger mock
+;(logger.info as jest.Mock) = jest.fn()
+;(logger.error as jest.Mock) = jest.fn()
+
 
 const mockCreateWorker = createWorker as jest.MockedFunction<typeof createWorker>
 
