@@ -8,7 +8,7 @@ export interface BackendResponse<T> {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<BackendResponse<T>> {
-    const isJson = init?.body !== undefined && typeof init.body === 'string'
+    const isJson = init?.body !== undefined && !(init.body instanceof FormData)
     const res = await fetch(`${API_BASE}${path}`, {
         ...init,
         credentials: 'include',

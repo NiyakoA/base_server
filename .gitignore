@@ -17,6 +17,5 @@ tessdata/
 logs/*.log
 .superpowers/
 
-# Next.js frontend build artifacts and local env
+# Next.js frontend build artifacts
 frontend/.next/
-frontend/.env.local
