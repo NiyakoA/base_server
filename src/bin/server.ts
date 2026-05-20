@@ -2,7 +2,6 @@ import app from '../app'
 import { bootstrap } from '../bootstrap'
 import config from '../config/config'
 import logger from '../handlers/logger'
-import { shutdownPool } from '../services/ocr-pool'
 
 const server = app.listen(config.PORT)
 
@@ -21,12 +20,3 @@ void (async () => {
         })
     }
 })()
-
-const shutdown = async () => {
-    logger.info('Shutting down OCR worker pool...', { meta: {} })
-    await shutdownPool()
-    server.close(() => process.exit(0))
-}
-
-process.on('SIGTERM', () => void shutdown())
-process.on('SIGINT', () => void shutdown())
