@@ -40,25 +40,28 @@ def extract():
     except Exception as e:
         return jsonify({'error': f'Invalid image: {e}'}), 422
 
-    pixel_values = processor(images=image, return_tensors='pt').pixel_values.to(DEVICE)
+    try:
+        pixel_values = processor(images=image, return_tensors='pt').pixel_values.to(DEVICE)
 
-    with torch.no_grad():
-        outputs = model.generate(
-            pixel_values,
-            return_dict_in_generate=True,
-            output_scores=True,
-            max_new_tokens=128
-        )
+        with torch.no_grad():
+            outputs = model.generate(
+                pixel_values,
+                return_dict_in_generate=True,
+                output_scores=True,
+                max_new_tokens=128
+            )
 
-    text = processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0]
-    confidence = compute_confidence(outputs.scores)
-    processing_time_ms = int((time.time() - start) * 1000)
+        text = processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0]
+        confidence = compute_confidence(outputs.scores)
+        processing_time_ms = int((time.time() - start) * 1000)
 
-    return jsonify({
-        'text': text,
-        'confidence': confidence,
-        'processingTimeMs': processing_time_ms
-    })
+        return jsonify({
+            'text': text,
+            'confidence': confidence,
+            'processingTimeMs': processing_time_ms
+        })
+    except Exception as e:
+        return jsonify({'error': f'Processing failed: {e}'}), 500
 
 
 if __name__ == '__main__':
