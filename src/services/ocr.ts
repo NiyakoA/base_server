@@ -1,8 +1,7 @@
 import path from 'path'
 import sharp from 'sharp'
 import { createWorker } from 'tesseract.js'
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const logger = (require('../handlers/logger') as { default: typeof import('../handlers/logger').default }).default
+import logger from '../handlers/logger'
 
 const TESSDATA_DIR = path.join(process.cwd(), 'tessdata')
 const HIGH_CONFIDENCE_THRESHOLD = 85
