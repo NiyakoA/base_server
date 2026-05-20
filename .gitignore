@@ -19,3 +19,7 @@ logs/*.log
 
 # Next.js frontend build artifacts
 frontend/.next/
+
+# Python
+trocr/__pycache__/
+trocr/*.pyc

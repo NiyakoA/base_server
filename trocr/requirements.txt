@@ -1,0 +1,6 @@
+flask
+transformers
+torch
+torchvision
+Pillow
+accelerate
