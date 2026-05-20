@@ -14,6 +14,7 @@ jest.mock('sharp', () => {
         blur: jest.fn().mockReturnThis(),
         gamma: jest.fn().mockReturnThis(),
         toBuffer: jest.fn().mockResolvedValue(Buffer.from('processed'))
+        // extra methods for the 4 pipeline variants (used in Task 2 implementation)
     }
     return jest.fn(() => instance)
 })
@@ -23,6 +24,8 @@ jest.mock('tesseract.js', () => ({ createWorker: jest.fn() }))
 const mockCreateWorker = createWorker as jest.MockedFunction<typeof createWorker>
 
 describe('extractText', () => {
+    // Pipelines execute in this order: ['baseline', 'binarize', 'denoise', 'high-contrast']
+    // One worker is created per extractText call and reused across all pipelines.
     const fakeBuffer = Buffer.from('fake-image')
 
     afterEach(() => jest.clearAllMocks())
@@ -34,14 +37,14 @@ describe('extractText', () => {
             .mockResolvedValueOnce({ data: { text: 'denoise text', confidence: 90 } })
             .mockResolvedValueOnce({ data: { text: 'high text', confidence: 50 } })
         const terminate = jest.fn().mockResolvedValue(undefined)
-        mockCreateWorker.mockResolvedValue({ recognize, terminate } as never)
+        mockCreateWorker.mockResolvedValue({ recognize, terminate } as unknown as Awaited<ReturnType<typeof createWorker>>)
 
         const result: IOcrResult = await extractText(fakeBuffer)
 
         expect(result.text).toBe('denoise text')
         expect(result.confidence).toBe(90)
         expect(result.pipeline).toBe('denoise')
-        expect(recognize).toHaveBeenCalledTimes(3) // stops after denoise
+        expect(recognize).toHaveBeenCalledTimes(3) // baseline(60) → binarize(75) → denoise(90 ≥ 85, stop)
     })
 
     it('runs all pipelines and returns the best when none exceeds threshold', async () => {
@@ -51,7 +54,7 @@ describe('extractText', () => {
             .mockResolvedValueOnce({ data: { text: 'text c', confidence: 65 } })
             .mockResolvedValueOnce({ data: { text: 'text d', confidence: 40 } })
         const terminate = jest.fn().mockResolvedValue(undefined)
-        mockCreateWorker.mockResolvedValue({ recognize, terminate } as never)
+        mockCreateWorker.mockResolvedValue({ recognize, terminate } as unknown as Awaited<ReturnType<typeof createWorker>>)
 
         const result: IOcrResult = await extractText(fakeBuffer)
 
@@ -64,7 +67,7 @@ describe('extractText', () => {
     it('always terminates the worker — even if a pipeline throws', async () => {
         const recognize = jest.fn().mockRejectedValue(new Error('tesseract failure'))
         const terminate = jest.fn().mockResolvedValue(undefined)
-        mockCreateWorker.mockResolvedValue({ recognize, terminate } as never)
+        mockCreateWorker.mockResolvedValue({ recognize, terminate } as unknown as Awaited<ReturnType<typeof createWorker>>)
 
         await expect(extractText(fakeBuffer)).rejects.toThrow('tesseract failure')
         expect(terminate).toHaveBeenCalledTimes(1)
