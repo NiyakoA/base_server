@@ -1,6 +1,4 @@
 flask
-transformers
-torch
-torchvision
-Pillow
-accelerate
+easyocr
+# Note: install PyTorch GPU separately before the above:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124

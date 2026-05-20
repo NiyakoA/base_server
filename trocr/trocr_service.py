@@ -1,30 +1,22 @@
 import io
-import math
+import sys
 import time
 
-import torch
-import torch.nn.functional as F
+# Force UTF-8 output so EasyOCR's download progress bar works on Windows
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+import easyocr
+import numpy as np
 from flask import Flask, jsonify, request
 from PIL import Image
-from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
 app = Flask(__name__)
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(f'Loading TrOCR model on {DEVICE}...')
-
-processor = TrOCRProcessor.from_pretrained('microsoft/trocr-large-handwritten')
-model = VisionEncoderDecoderModel.from_pretrained('microsoft/trocr-large-handwritten').to(DEVICE)
-model.eval()
-
+print('Loading EasyOCR model (GPU)...')
+reader = easyocr.Reader(['en'], gpu=True)
 print('Model ready.')
-
-
-def compute_confidence(scores) -> int:
-    if not scores:
-        return 0
-    probs = [F.softmax(s, dim=-1).max(dim=-1).values.item() for s in scores]
-    return int(math.exp(sum(math.log(max(p, 1e-9)) for p in probs) / len(probs)) * 100)
 
 
 @app.route('/extract', methods=['POST'])
@@ -41,18 +33,14 @@ def extract():
         return jsonify({'error': f'Invalid image: {e}'}), 422
 
     try:
-        pixel_values = processor(images=image, return_tensors='pt').pixel_values.to(DEVICE)
+        img_array = np.array(image)
+        result = reader.readtext(img_array)
 
-        with torch.no_grad():
-            outputs = model.generate(
-                pixel_values,
-                return_dict_in_generate=True,
-                output_scores=True,
-                max_new_tokens=128
-            )
+        lines = [item[1] for item in result]
+        confidences = [item[2] for item in result]
 
-        text = processor.batch_decode(outputs.sequences, skip_special_tokens=True)[0]
-        confidence = compute_confidence(outputs.scores)
+        text = '\n'.join(lines)
+        confidence = int(sum(confidences) / len(confidences) * 100) if confidences else 0
         processing_time_ms = int((time.time() - start) * 1000)
 
         return jsonify({
