@@ -15,7 +15,6 @@ interface OcrData {
 }
 
 const ERROR_MESSAGES: Record<number, string> = {
-    401: '',
     413: 'File too large — max 10 MB',
     422: 'No image provided',
     500: 'Extraction failed — try a clearer image'

@@ -110,7 +110,13 @@ describe('loginService', () => {
     })
 
     it('should successfully log in a user and return tokens', async () => {
-        const mockUser = { _id: 'userId', password: 'hashedPassword', save: jest.fn() }
+        const mockUserData = { _id: 'userId', accountConfirmation: { status: true } }
+        const mockUser = {
+            ...mockUserData,
+            password: 'hashedPassword',
+            save: jest.fn(),
+            toObject: jest.fn().mockReturnValue({ ...mockUserData })
+        }
         ;(query.findUserByEmail as jest.Mock).mockResolvedValue(mockUser)
         ;(hashing.comparePassword as jest.Mock).mockResolvedValue(true)
         ;(jwt.generateToken as jest.Mock).mockImplementation(() => {
@@ -124,7 +130,7 @@ describe('loginService', () => {
 
         expect(response).toEqual({
             success: true,
-            user: mockUser,
+            user: mockUserData,
             accessToken: 'mockDefaultToken',
             refreshToken: 'mockDefaultToken'
         })
