@@ -25,9 +25,9 @@
     "license": "ISC",
     "description": "",
     "lint-staged": {
-        "*.ts": [
-            "npm run lint:fix",
-            "npm run format:fix"
+        "src/**/*.ts": [
+            "eslint --fix",
+            "prettier --write"
         ]
     },
     "devDependencies": {
