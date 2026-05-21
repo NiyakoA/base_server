@@ -1,6 +1,9 @@
 flask
-easyocr
+pytesseract
+pandas>=3.0
 pymupdf
-requests
-# PyTorch GPU (install before the above):
+google-generativeai
+python-dotenv
+Pillow
+# PyTorch GPU (only needed if you re-add EasyOCR):
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
