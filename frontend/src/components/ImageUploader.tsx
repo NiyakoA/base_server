@@ -41,12 +41,12 @@ export default function ImageUploader({ onUpload, disabled, multiple = false }: 
                 {multiple ? 'Drop images here or click to upload' : 'Drop image here or click to upload'}
             </p>
             <p className="text-xs text-[#555] mt-1">
-                PNG, JPG, WEBP, TIFF · max 10 MB{multiple ? ' · multiple files supported' : ''}
+                PNG, JPG, WEBP, TIFF, PDF · max 10 MB{multiple ? ' · multiple files supported' : ''}
             </p>
             <input
                 ref={inputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/tiff"
+                accept="image/png,image/jpeg,image/webp,image/tiff,application/pdf"
                 multiple={multiple}
                 className="hidden"
                 onChange={e => handleFiles(e.target.files)}

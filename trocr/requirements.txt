@@ -1,4 +1,6 @@
 flask
 easyocr
-# Note: install PyTorch GPU separately before the above:
+pymupdf
+requests
+# PyTorch GPU (install before the above):
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
