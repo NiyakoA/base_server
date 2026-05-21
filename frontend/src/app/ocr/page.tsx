@@ -21,11 +21,14 @@ const ERROR_MESSAGES: Record<number, string> = {
     500: 'OCR processing failed'
 }
 
+type OcrMode = 'handwritten' | 'printed'
+
 export default function OcrPage() {
     const [results, setResults] = useState<BatchItem[]>([])
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
     const [progress, setProgress] = useState('')
+    const [mode, setMode] = useState<OcrMode>('handwritten')
 
     async function handleUpload(files: File[]) {
         setError(null)
@@ -36,6 +39,7 @@ export default function OcrPage() {
         try {
             const form = new FormData()
             files.forEach(f => form.append('images', f))
+            form.append('mode', mode)
             const res = await apiUpload<BatchItem[]>('/v1/ocr/batch', form)
             setResults(res.data)
         } catch (err) {
@@ -54,6 +58,23 @@ export default function OcrPage() {
             </div>
 
             <div className="flex flex-col gap-4">
+                <div className="flex gap-2">
+                    {(['handwritten', 'printed'] as OcrMode[]).map(m => (
+                        <button
+                            key={m}
+                            onClick={() => setMode(m)}
+                            disabled={loading}
+                            className={[
+                                'px-4 py-1.5 rounded text-sm font-medium transition-colors',
+                                mode === m
+                                    ? 'bg-[#4cc9f0] text-[#0f0e17]'
+                                    : 'bg-[#16213e] text-[#aaa] hover:text-[#4cc9f0]'
+                            ].join(' ')}
+                        >
+                            {m.charAt(0).toUpperCase() + m.slice(1)}
+                        </button>
+                    ))}
+                </div>
                 <ImageUploader onUpload={handleUpload} disabled={loading} multiple />
                 {loading && <p className="text-center text-sm text-[#aaa]">{progress}</p>}
                 {error && <p className="text-center text-sm text-[#e94560]">{error}</p>}
