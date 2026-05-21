@@ -88,6 +88,11 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
         throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
     }
 
+    if (typeof parsed.totalScore !== 'number' || typeof parsed.maxScore !== 'number' || !Array.isArray(parsed.questions)) {
+        logger.error('Gemini returned structurally invalid grading response', { meta: { raw } })
+        throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
+    }
+
     logger.info('Exam graded', {
         meta: { totalScore: parsed.totalScore, maxScore: parsed.maxScore, questions: parsed.questions.length }
     })

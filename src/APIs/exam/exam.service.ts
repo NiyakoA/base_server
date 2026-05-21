@@ -4,6 +4,9 @@ import { gradeExam } from '../../services/grading'
 import ExamRecord from './exam.model'
 import { IExamRecord } from './types/exam.interface'
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const logger = (require('../../handlers/logger') as { default: typeof import('../../handlers/logger').default }).default
+
 export const gradeExamFiles = async (answerKeyBuffer: Buffer, studentPaperBuffer: Buffer, mode: OcrMode): Promise<IExamRecord> => {
     let answerKeyText: string
     let studentPaperText: string
@@ -11,14 +14,16 @@ export const gradeExamFiles = async (answerKeyBuffer: Buffer, studentPaperBuffer
     try {
         const keyResult = await extractText(answerKeyBuffer, mode)
         answerKeyText = keyResult.text
-    } catch {
+    } catch (err) {
+        logger.error('OCR extraction failed for answer key', { meta: { err } })
         throw new CustomError('Could not extract text from answer key.', 422)
     }
 
     try {
         const paperResult = await extractText(studentPaperBuffer, mode)
         studentPaperText = paperResult.text
-    } catch {
+    } catch (err) {
+        logger.error('OCR extraction failed for student paper', { meta: { err } })
         throw new CustomError('Could not extract text from student paper.', 422)
     }
 
