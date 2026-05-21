@@ -14,14 +14,15 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 import fitz  # PyMuPDF
 import pytesseract
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 from flask import Flask, jsonify, request
 from PIL import Image, ImageFilter, ImageEnhance
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
 HANDWRITING_PROMPT = (
     'Transcribe all text visible in this image exactly as written. '
@@ -29,11 +30,10 @@ HANDWRITING_PROMPT = (
 )
 
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini = genai.GenerativeModel(GEMINI_MODEL)
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     print(f'Gemini ready: {GEMINI_MODEL}')
 else:
-    gemini = None
+    gemini_client = None
     print('WARNING: GEMINI_API_KEY not set — handwritten mode will fail')
 
 app = Flask(__name__)
@@ -101,10 +101,18 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
 
 
 def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
-    if not gemini:
+    if not gemini_client:
         raise RuntimeError('GEMINI_API_KEY not configured — add it to .env')
     pre = preprocess(pil_image).convert('RGB')
-    response = gemini.generate_content([HANDWRITING_PROMPT, pre])
+    buf = io.BytesIO()
+    pre.save(buf, format='JPEG', quality=95)
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[
+            genai_types.Part.from_text(text=HANDWRITING_PROMPT),
+            genai_types.Part.from_bytes(data=buf.getvalue(), mime_type='image/jpeg'),
+        ],
+    )
     return postprocess(response.text), 95
 
 
