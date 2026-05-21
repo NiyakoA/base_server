@@ -1,25 +1,12 @@
-interface Question {
-    number: number
-    correctAnswer: string
-    studentAnswer: string
-    score: 'correct' | 'partial' | 'wrong'
-    feedback: string
-}
+import { ExamQuestion, GradeResult } from '@/types/exam'
 
-interface Props {
-    totalScore: number
-    maxScore: number
-    percentage: number
-    questions: Question[]
-}
-
-const SCORE_STYLES: Record<Question['score'], string> = {
+const SCORE_STYLES: Record<ExamQuestion['score'], string> = {
     correct: 'bg-[#1a3a2a] text-[#68d391]',
     partial: 'bg-[#3a2e1a] text-[#f6ad55]',
     wrong: 'bg-[#3a1a1a] text-[#fc8181]'
 }
 
-export default function ExamResult({ totalScore, maxScore, percentage, questions }: Props) {
+export default function ExamResult({ totalScore, maxScore, percentage, questions }: GradeResult) {
     return (
         <div className="flex flex-col gap-4">
             <div className="bg-[#16213e] rounded-lg p-4 flex items-center justify-between">

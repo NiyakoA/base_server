@@ -3,23 +3,9 @@
 import { useState } from 'react'
 import { apiUpload } from '@/lib/api'
 import ExamResult from '@/components/ExamResult'
+import { GradeResult } from '@/types/exam'
 
 type OcrMode = 'handwritten' | 'printed'
-
-interface Question {
-    number: number
-    correctAnswer: string
-    studentAnswer: string
-    score: 'correct' | 'partial' | 'wrong'
-    feedback: string
-}
-
-interface GradeResult {
-    totalScore: number
-    maxScore: number
-    percentage: number
-    questions: Question[]
-}
 
 const ERROR_MESSAGES: Record<number, string> = {
     413: 'File too large — max 10 MB',
