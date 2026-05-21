@@ -55,6 +55,10 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
         throw new CustomError('Answer key text is empty — OCR may have failed.', 422)
     }
 
+    if (!studentPaperText.trim()) {
+        throw new CustomError('Student paper text is empty — OCR may have failed.', 422)
+    }
+
     let raw: string
     try {
         const response = await getAI().models.generateContent({
@@ -64,6 +68,10 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
         raw = response.text ?? ''
     } catch {
         throw new CustomError('Grading service unavailable.', 503)
+    }
+
+    if (!raw.trim()) {
+        throw new CustomError('Grading service returned an empty response.', 503)
     }
 
     // Strip markdown code fences Gemini sometimes adds

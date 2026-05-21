@@ -73,4 +73,10 @@ describe('gradeExam', () => {
             statusCode: 503
         })
     })
+
+    it('throws 422 when student paper text is empty', async () => {
+        await expect(gradeExam('answer key text', '')).rejects.toMatchObject({
+            statusCode: 422
+        })
+    })
 })
