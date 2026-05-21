@@ -19,7 +19,7 @@ describe('extractText', () => {
         mockFetch.mockResolvedValueOnce({
             ok: true,
             status: 200,
-            json: () => Promise.resolve({ text: 'Hello world', confidence: 87, processingTimeMs: 420, pipeline: 'llava:7b' })
+            json: () => Promise.resolve({ text: 'Hello world', confidence: 87, processingTimeMs: 420, pipeline: 'gemini-2.0-flash' })
         })
 
         const result: IOcrResult = await extractText(fakeBuffer)
@@ -27,7 +27,7 @@ describe('extractText', () => {
         expect(result.text).toBe('Hello world')
         expect(result.confidence).toBe(87)
         expect(result.processingTimeMs).toBe(420)
-        expect(result.pipeline).toBe('llava:7b')
+        expect(result.pipeline).toBe('gemini-2.0-flash')
         expect(mockFetch).toHaveBeenCalledWith('http://localhost:5001/extract', expect.objectContaining({ method: 'POST' }))
     })
 
