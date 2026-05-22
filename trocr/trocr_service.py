@@ -43,7 +43,13 @@ app = Flask(__name__)
 
 def preprocess(pil_image: Image.Image) -> Image.Image:
     img = pil_image.convert('L')
-    img = ImageEnhance.Contrast(img).enhance(2.0)
+    # Pad all sides so edge content is never clipped by Tesseract or vision models.
+    # Bottom gets extra padding because exam answers often run to the last line.
+    pad_h = max(40, img.height // 15)
+    pad_w = max(40, img.width // 15)
+    padded = Image.new('L', (img.width + pad_w * 2, img.height + pad_h * 2 + pad_h), 255)
+    padded.paste(img, (pad_w, pad_h))
+    img = ImageEnhance.Contrast(padded).enhance(2.0)
     img = img.filter(ImageFilter.SHARPEN)
     return img
 
@@ -83,9 +89,9 @@ def pdf_to_images(pdf_bytes: bytes) -> list:
 
 def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
     pre = preprocess(pil_image)
-    text = pytesseract.image_to_string(pre, config='--psm 6').strip()
+    text = pytesseract.image_to_string(pre, config='--psm 4').strip()
     # Parse confidence from TSV output — avoids pandas dependency
-    tsv = pytesseract.image_to_data(pre, config='--psm 6', output_type=pytesseract.Output.STRING)
+    tsv = pytesseract.image_to_data(pre, config='--psm 4', output_type=pytesseract.Output.STRING)
     confs = []
     for line in tsv.splitlines()[1:]:  # skip header
         parts = line.split('\t')
