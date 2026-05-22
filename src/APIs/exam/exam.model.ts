@@ -4,8 +4,8 @@ import { IExamRecord, IExamQuestion } from './types/exam.interface'
 const questionSchema = new mongoose.Schema<IExamQuestion>(
     {
         number: { type: Number, required: true },
-        correctAnswer: { type: String, required: true },
-        studentAnswer: { type: String, required: true },
+        correctAnswer: { type: String, default: '' },
+        studentAnswer: { type: String, default: '' },
         score: { type: String, enum: ['correct', 'partial', 'wrong'], required: true },
         feedback: { type: String, default: '' }
     },
