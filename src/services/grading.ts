@@ -29,12 +29,13 @@ STUDENT PAPER:
 ${studentPaperText}
 
 Instructions:
-- Match each question in the student paper to the corresponding answer in the key.
-- For each question assign a score: "correct", "partial", or "wrong".
-- Write a one-sentence feedback explaining any mistake (leave empty string if correct).
-- Count totalScore (correct=1, partial=0.5, wrong=0) and maxScore (total questions).
+- Include EVERY question from the answer key — do not skip any.
+- For each question, copy the student's answer verbatim from the student paper. If the student left a question blank or you cannot find their answer, use an empty string "".
+- Assign a score: "correct", "partial", or "wrong".
+- Write a one-sentence feedback explaining any mistake (use empty string "" if correct).
+- totalScore: correct=1, partial=0.5, wrong=0. maxScore = total number of questions.
 
-Respond with ONLY valid JSON in this exact shape:
+Respond with ONLY valid JSON — no markdown, no explanation:
 {
   "totalScore": number,
   "maxScore": number,
