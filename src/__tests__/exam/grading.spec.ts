@@ -35,8 +35,8 @@ describe('gradeExam', () => {
 
         const result: IGradingResult = await gradeExam('answer key text', 'student paper text')
 
-        expect(result.totalScore).toBe(3)
-        expect(result.maxScore).toBe(4)
+        expect(result.totalScore).toBe(2) // recomputed: 2 correct × 1 + 2 wrong × 0
+        expect(result.maxScore).toBe(4) // recomputed: total questions
         expect(result.questions).toHaveLength(4)
         expect(result.questions[1].score).toBe('wrong')
         expect(result.questions[1].feedback).toBe('The formula for water is H2O, not H20.')
@@ -48,7 +48,7 @@ describe('gradeExam', () => {
         })
 
         const result: IGradingResult = await gradeExam('answer key text', 'student paper text')
-        expect(result.totalScore).toBe(3)
+        expect(result.totalScore).toBe(2) // recomputed from questions
     })
 
     it('throws 422 when Gemini returns malformed JSON', async () => {

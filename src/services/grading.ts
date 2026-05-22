@@ -88,14 +88,17 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
         throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
     }
 
-    if (typeof parsed.totalScore !== 'number' || typeof parsed.maxScore !== 'number' || !Array.isArray(parsed.questions)) {
+    if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
         logger.error('Gemini returned structurally invalid grading response', { meta: { raw } })
         throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
     }
 
-    logger.info('Exam graded', {
-        meta: { totalScore: parsed.totalScore, maxScore: parsed.maxScore, questions: parsed.questions.length }
-    })
+    // Recompute from individual question scores so the badge always matches the cards
+    const scoreMap: Record<string, number> = { correct: 1, partial: 0.5, wrong: 0 }
+    const totalScore = parsed.questions.reduce((sum, q) => sum + (scoreMap[(q as { score: string }).score] ?? 0), 0)
+    const maxScore = parsed.questions.length
 
-    return parsed
+    logger.info('Exam graded', { meta: { totalScore, maxScore, questions: maxScore } })
+
+    return { ...parsed, totalScore, maxScore }
 }
