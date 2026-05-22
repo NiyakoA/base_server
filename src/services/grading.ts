@@ -1,6 +1,6 @@
 // src/services/grading.ts
 import { CustomError } from '../utils/errors'
-import { IGradingResult } from '../APIs/exam/types/exam.interface'
+import { IExamQuestion, IGradingResult } from '../APIs/exam/types/exam.interface'
 
 // require() bypasses ts-jest's __importDefault wrapping for both logger and genai
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -93,12 +93,26 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
         throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
     }
 
+    // Normalise each question so Mongoose enum/required constraints are always satisfied
+    const VALID_SCORES = new Set<IExamQuestion['score']>(['correct', 'partial', 'wrong'])
+    const questions: IExamQuestion[] = parsed.questions.map((raw, i) => {
+        const q = raw as unknown as Record<string, unknown>
+        const rawScore = String(q.score ?? '')
+        return {
+            number: typeof q.number === 'number' ? q.number : i + 1,
+            correctAnswer: String(q.correctAnswer ?? q.correct_answer ?? ''),
+            studentAnswer: String(q.studentAnswer ?? q.student_answer ?? ''),
+            score: (VALID_SCORES.has(rawScore as IExamQuestion['score']) ? rawScore : 'wrong') as IExamQuestion['score'],
+            feedback: String(q.feedback ?? '')
+        }
+    })
+
     // Recompute from individual question scores so the badge always matches the cards
     const scoreMap: Record<string, number> = { correct: 1, partial: 0.5, wrong: 0 }
-    const totalScore = parsed.questions.reduce((sum, q) => sum + (scoreMap[(q as { score: string }).score] ?? 0), 0)
-    const maxScore = parsed.questions.length
+    const totalScore = questions.reduce((sum, q) => sum + (scoreMap[q.score] ?? 0), 0)
+    const maxScore = questions.length
 
     logger.info('Exam graded', { meta: { totalScore, maxScore, questions: maxScore } })
 
-    return { ...parsed, totalScore, maxScore }
+    return { ...parsed, totalScore, maxScore, questions }
 }

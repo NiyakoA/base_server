@@ -30,15 +30,21 @@ export const gradeExamFiles = async (answerKeyBuffer: Buffer, studentPaperBuffer
     const grading = await gradeExam(answerKeyText, studentPaperText)
     const percentage = grading.maxScore > 0 ? Math.round((grading.totalScore / grading.maxScore) * 100) : 0
 
-    const record = await ExamRecord.create({
-        mode,
-        answerKeyText,
-        studentPaperText,
-        totalScore: grading.totalScore,
-        maxScore: grading.maxScore,
-        percentage,
-        questions: grading.questions
-    })
+    let record
+    try {
+        record = await ExamRecord.create({
+            mode,
+            answerKeyText,
+            studentPaperText,
+            totalScore: grading.totalScore,
+            maxScore: grading.maxScore,
+            percentage,
+            questions: grading.questions
+        })
+    } catch (err) {
+        logger.error('Failed to save exam record', { meta: { err } })
+        throw new CustomError('Grading failed — could not save result.', 500)
+    }
 
     return record.toObject() as IExamRecord
 }
