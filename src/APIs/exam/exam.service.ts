@@ -2,12 +2,37 @@ import { CustomError } from '../../utils/errors'
 import { extractText, OcrMode } from '../../services/ocr'
 import { gradeExam } from '../../services/grading'
 import ExamRecord from './exam.model'
-import { IExamRecord } from './types/exam.interface'
+import testRepository from './test.repository'
+import { IExamRecord, IExamQuestion, ITestWithCount, ITestResults } from './types/exam.interface'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const logger = (require('../../handlers/logger') as { default: typeof import('../../handlers/logger').default }).default
 
-export const gradeExamFiles = async (answerKeyBuffer: Buffer, studentPaperBuffer: Buffer, mode: OcrMode): Promise<IExamRecord> => {
+const resolveTestId = async (testId?: string, testName?: string): Promise<string> => {
+    if (testId) {
+        const test = await testRepository.findById(testId)
+        if (!test) throw new CustomError('Test not found', 404)
+        return testId
+    }
+    if (testName?.trim()) {
+        const test = await testRepository.create(testName.trim())
+        return String(test._id)
+    }
+    throw new CustomError('Either testId or testName is required', 422)
+}
+
+export const gradeExamFiles = async (
+    answerKeyBuffer: Buffer,
+    studentPaperBuffer: Buffer,
+    mode: OcrMode,
+    studentName: string,
+    testId?: string,
+    testName?: string
+): Promise<IExamRecord> => {
+    if (!studentName?.trim()) throw new CustomError('Student name is required', 422)
+
+    const resolvedTestId = await resolveTestId(testId, testName)
+
     let answerKeyText: string
     let studentPaperText: string
 
@@ -33,6 +58,8 @@ export const gradeExamFiles = async (answerKeyBuffer: Buffer, studentPaperBuffer
     let record
     try {
         record = await ExamRecord.create({
+            testId: resolvedTestId,
+            studentName: studentName.trim(),
             mode,
             answerKeyText,
             studentPaperText,
@@ -47,4 +74,36 @@ export const gradeExamFiles = async (answerKeyBuffer: Buffer, studentPaperBuffer
     }
 
     return record.toObject() as IExamRecord
+}
+
+export const listTests = async (): Promise<ITestWithCount[]> => {
+    return testRepository.listWithCounts()
+}
+
+export const getTestResults = async (testId: string): Promise<ITestResults> => {
+    const results = await testRepository.getResults(testId)
+    if (!results) throw new CustomError('Test not found', 404)
+    return results
+}
+
+const recomputeScores = (questions: IExamQuestion[]) => {
+    const maxScore = questions.length
+    const totalScore = questions.reduce((sum, q) => {
+        if (q.score === 'correct') return sum + 1
+        if (q.score === 'partial') return sum + 0.5
+        return sum
+    }, 0)
+    const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0
+    return { totalScore, maxScore, percentage }
+}
+
+export const editExamRecord = async (recordId: string, questions: IExamQuestion[]): Promise<IExamRecord> => {
+    const { totalScore, maxScore, percentage } = recomputeScores(questions)
+    const record = await ExamRecord.findByIdAndUpdate(
+        recordId,
+        { $set: { questions, totalScore, maxScore, percentage } },
+        { new: true, runValidators: true }
+    ).lean()
+    if (!record) throw new CustomError('Record not found', 404)
+    return record as unknown as IExamRecord
 }
