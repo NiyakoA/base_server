@@ -14,6 +14,8 @@ const questionSchema = new mongoose.Schema<IExamQuestion>(
 
 const examSchema = new mongoose.Schema<IExamRecord>(
     {
+        testId: { type: mongoose.Schema.Types.ObjectId, ref: 'Test', required: true },
+        studentName: { type: String, required: true, trim: true },
         mode: { type: String, enum: ['handwritten', 'printed'], required: true },
         answerKeyText: { type: String, required: true },
         studentPaperText: { type: String, required: true },
