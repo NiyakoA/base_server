@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { gradeExamFiles, listTests, getTestResults, editExamRecord } from '../../APIs/exam/exam.service'
 
 jest.mock('../../services/ocr', () => ({
@@ -27,6 +26,7 @@ const mockListWithCounts = jest.fn()
 const mockGetResults = jest.fn()
 
 jest.mock('../../APIs/exam/test.repository', () => ({
+    __esModule: true,
     default: {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         create: (...args: unknown[]) => mockTestCreate(...args),
@@ -43,6 +43,7 @@ const mockRecordCreate = jest.fn()
 const mockRecordFindByIdAndUpdate = jest.fn()
 
 jest.mock('../../APIs/exam/exam.model', () => ({
+    __esModule: true,
     default: {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         create: (...args: unknown[]) => mockRecordCreate(...args),
@@ -107,7 +108,6 @@ describe('listTests', () => {
         const tests = [{ _id: '1', name: 'Quiz', studentCount: 3 }]
         mockListWithCounts.mockResolvedValue(tests)
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const result = await listTests()
 
         expect(result).toEqual(tests)
@@ -123,7 +123,6 @@ describe('getTestResults', () => {
         }
         mockGetResults.mockResolvedValue(payload)
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const result = await getTestResults('1')
 
         expect(result).toEqual(payload)
@@ -147,7 +146,6 @@ describe('editExamRecord', () => {
         const updated = { _id: 'rec-1', questions, totalScore: 2, maxScore: 3, percentage: 67 }
         mockRecordFindByIdAndUpdate.mockReturnValue({ lean: () => Promise.resolve(updated) })
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const result = await editExamRecord('rec-1', questions)
 
         expect(mockRecordFindByIdAndUpdate).toHaveBeenCalledWith(
