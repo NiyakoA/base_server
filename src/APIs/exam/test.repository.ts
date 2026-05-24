@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import TestModel from './test.model'
 import ExamRecord from './exam.model'
 import { ITest, ITestWithCount, ITestResults, ITestStats, IExamRecord } from './types/exam.interface'
@@ -14,10 +15,12 @@ const testRepository = {
 
     listWithCounts: async (): Promise<ITestWithCount[]> => {
         const tests = await TestModel.find().sort({ createdAt: -1 }).lean()
-        const counts = await ExamRecord.aggregate<{ _id: string; count: number }>([{ $group: { _id: '$testId', count: { $sum: 1 } } }])
+        const counts = await ExamRecord.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
+            { $group: { _id: '$testId', count: { $sum: 1 } } }
+        ])
         const countMap = new Map(counts.map((c) => [c._id.toString(), c.count]))
         return tests.map((t) => ({
-            ...(t as ITest),
+            ...t,
             studentCount: countMap.get(t._id.toString()) ?? 0
         }))
     },
@@ -38,7 +41,7 @@ const testRepository = {
         return {
             test: test as ITest,
             stats,
-            records: records as unknown as IExamRecord[]
+            records: records as IExamRecord[]
         }
     }
 }
