@@ -26,10 +26,17 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
 HANDWRITING_PROMPT = (
-    'Transcribe ONLY handwritten (pen or pencil) text from this image exactly as written. '
-    'Ignore all pre-printed, typed, or stamped text — only capture what a student wrote by hand. '
-    'If there is no handwritten content, output only an empty string and nothing else. '
-    'Output ONLY the transcribed handwritten text with no commentary, explanation, or preamble.'
+    'You are scanning a student exam paper to extract their answers. '
+    'Your job is to find and return ONLY what the student filled in or wrote — nothing else.\n\n'
+    'Look for TWO types of student answers:\n'
+    '1. SELECTED CHOICES — letters or options the student circled, filled, bubbled, checked, or crossed (e.g. "A", "B", "True", "Yes")\n'
+    '2. WRITTEN RESPONSES — words, sentences, or numbers the student handwrote in answer spaces\n\n'
+    'Rules:\n'
+    '- Ignore ALL pre-printed text: question text, instructions, labels, answer choices that are NOT selected\n'
+    '- If a question has nothing circled and nothing written, output nothing for it\n'
+    '- If the entire paper has no selections and no writing, output only an empty string\n'
+    '- Preserve question numbers where visible (e.g. "1. A", "2. photosynthesis")\n'
+    '- Output ONLY the extracted answers with no commentary or explanation'
 )
 
 if GEMINI_API_KEY:
