@@ -3,6 +3,7 @@ import mongoose from 'mongoose'
 
 export interface ITest {
     _id?: mongoose.Types.ObjectId
+    userId: mongoose.Types.ObjectId | string
     name: string
     createdAt?: Date
 }
