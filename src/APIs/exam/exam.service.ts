@@ -8,14 +8,14 @@ import { IExamRecord, IExamQuestion, ITestWithCount, ITestResults } from './type
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const logger = (require('../../handlers/logger') as { default: typeof import('../../handlers/logger').default }).default
 
-const resolveTestId = async (testId?: string, testName?: string): Promise<string> => {
+const resolveTestId = async (testId: string | undefined, testName: string | undefined, userId: string): Promise<string> => {
     if (testId) {
-        const test = await testRepository.findById(testId)
+        const test = await testRepository.findById(testId, userId)
         if (!test) throw new CustomError('Test not found', 404)
         return testId
     }
     if (testName?.trim()) {
-        const test = await testRepository.create(testName.trim())
+        const test = await testRepository.create(testName.trim(), userId)
         return test._id!.toString()
     }
     throw new CustomError('Either testId or testName is required', 422)
@@ -26,12 +26,13 @@ export const gradeExamFiles = async (
     studentPaperBuffer: Buffer,
     mode: OcrMode,
     studentName: string,
+    userId: string,
     testId?: string,
     testName?: string
 ): Promise<IExamRecord> => {
     if (!studentName?.trim()) throw new CustomError('Student name is required', 422)
 
-    const resolvedTestId = await resolveTestId(testId, testName)
+    const resolvedTestId = await resolveTestId(testId, testName, userId)
 
     let answerKeyText: string
     let studentPaperText: string
@@ -76,12 +77,12 @@ export const gradeExamFiles = async (
     return record.toObject() as IExamRecord
 }
 
-export const listTests = async (): Promise<ITestWithCount[]> => {
-    return testRepository.listWithCounts()
+export const listTests = async (userId: string): Promise<ITestWithCount[]> => {
+    return testRepository.listWithCounts(userId)
 }
 
-export const getTestResults = async (testId: string): Promise<ITestResults> => {
-    const results = await testRepository.getResults(testId)
+export const getTestResults = async (testId: string, userId: string): Promise<ITestResults> => {
+    const results = await testRepository.getResults(testId, userId)
     if (!results) throw new CustomError('Test not found', 404)
     return results
 }
