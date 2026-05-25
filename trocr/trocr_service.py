@@ -26,9 +26,10 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
 HANDWRITING_PROMPT = (
-    'Transcribe all handwritten text visible in this image exactly as written. '
-    'If the image is blank or contains no handwritten text, output only an empty string and nothing else. '
-    'Output ONLY the transcribed text with no commentary, explanation, or preamble.'
+    'Transcribe ONLY handwritten (pen or pencil) text from this image exactly as written. '
+    'Ignore all pre-printed, typed, or stamped text — only capture what a student wrote by hand. '
+    'If there is no handwritten content, output only an empty string and nothing else. '
+    'Output ONLY the transcribed handwritten text with no commentary, explanation, or preamble.'
 )
 
 if GEMINI_API_KEY:
