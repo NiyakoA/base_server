@@ -25,6 +25,19 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
+ANSWER_CHECK_PROMPT = (
+    'Look at this student exam paper image.\n'
+    'I need a single YES or NO answer to this question:\n'
+    'Did the student physically write or mark ANYTHING by hand on this paper?\n\n'
+    'Count as YES:\n'
+    '- Any letter, word, or number written in pen or pencil\n'
+    '- Any circled, bubbled, checked, or crossed answer choice\n'
+    '- Any mark, scribble, or erasure made by hand\n\n'
+    'Count as NO:\n'
+    '- Only pre-printed question text with no student marks whatsoever\n\n'
+    'Reply with ONLY the single word YES or NO. Nothing else.'
+)
+
 HANDWRITING_PROMPT = (
     'You are scanning a student exam paper to extract their answers. '
     'Your job is to find and return ONLY what the student filled in or wrote — nothing else.\n\n'
@@ -34,7 +47,6 @@ HANDWRITING_PROMPT = (
     'Rules:\n'
     '- Ignore ALL pre-printed text: question text, instructions, labels, answer choices that are NOT selected\n'
     '- If a question has nothing circled and nothing written, output nothing for it\n'
-    '- If the entire paper has no selections and no writing, output only an empty string\n'
     '- Preserve question numbers where visible (e.g. "1. A", "2. photosynthesis")\n'
     '- Output ONLY the extracted answers with no commentary or explanation'
 )
@@ -151,6 +163,28 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
 # tall exam page to become blurry and unreadable.
 GEMINI_MAX_DIM = 2048
 
+def _prepare_image_bytes(pil_image: Image.Image) -> bytes:
+    """Preprocess and resize to Gemini's optimal window, return JPEG bytes."""
+    pre = preprocess(pil_image).convert('RGB')
+    if pre.width > GEMINI_MAX_DIM or pre.height > GEMINI_MAX_DIM:
+        pre.thumbnail((GEMINI_MAX_DIM, GEMINI_MAX_DIM), Image.LANCZOS)
+    buf = io.BytesIO()
+    pre.save(buf, format='JPEG', quality=95)
+    return buf.getvalue()
+
+
+def _student_wrote_anything(img_bytes: bytes) -> bool:
+    """Two-pass blank check: ask Gemini a simple YES/NO before full extraction."""
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=[
+            genai_types.Part.from_text(text=ANSWER_CHECK_PROMPT),
+            genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
+        ],
+    )
+    return response.text.strip().upper().startswith('YES')
+
+
 def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
     if not gemini_client:
         raise RuntimeError('GEMINI_API_KEY not configured — add it to .env')
@@ -158,19 +192,17 @@ def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
     if is_blank(pil_image):
         return '', 0
 
-    pre = preprocess(pil_image).convert('RGB')
+    img_bytes = _prepare_image_bytes(pil_image)
 
-    # Resize if either dimension exceeds Gemini's sweet spot, preserving aspect ratio.
-    if pre.width > GEMINI_MAX_DIM or pre.height > GEMINI_MAX_DIM:
-        pre.thumbnail((GEMINI_MAX_DIM, GEMINI_MAX_DIM), Image.LANCZOS)
+    # Gate: if the student wrote nothing, skip extraction entirely.
+    if not _student_wrote_anything(img_bytes):
+        return '', 0
 
-    buf = io.BytesIO()
-    pre.save(buf, format='JPEG', quality=95)
     response = gemini_client.models.generate_content(
         model=GEMINI_MODEL,
         contents=[
             genai_types.Part.from_text(text=HANDWRITING_PROMPT),
-            genai_types.Part.from_bytes(data=buf.getvalue(), mime_type='image/jpeg'),
+            genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
         ],
     )
     return postprocess(response.text), 95
