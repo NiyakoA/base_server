@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { apiUpload } from '@/lib/api'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { apiFetch, apiUpload } from '@/lib/api'
 import ExamResult from '@/components/ExamResult'
-import { GradeResult } from '@/types/exam'
+import { GradeResult, TestItem } from '@/types/exam'
 
 type OcrMode = 'handwritten' | 'printed'
 
@@ -15,6 +16,14 @@ const ERROR_MESSAGES: Record<number, string> = {
 }
 
 export default function ExamPage() {
+    const router = useRouter()
+
+    const [tests, setTests] = useState<TestItem[]>([])
+    const [testsError, setTestsError] = useState<string | null>(null)
+    const [selectedTestId, setSelectedTestId] = useState<string>('')
+    const [newTestName, setNewTestName] = useState<string>('')
+
+    const [studentName, setStudentName] = useState<string>('')
     const [answerKey, setAnswerKey] = useState<File | null>(null)
     const [studentPaper, setStudentPaper] = useState<File | null>(null)
     const [mode, setMode] = useState<OcrMode>('printed')
@@ -22,8 +31,25 @@ export default function ExamPage() {
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
 
+    useEffect(() => {
+        apiFetch<TestItem[]>('/v1/exam/tests')
+            .then(res => setTests(res.data))
+            .catch(err => {
+                const e = err as Error & { status?: number }
+                if (e.status === 401) {
+                    router.push('/login')
+                } else {
+                    setTestsError('Could not load tests — you can still create a new one below')
+                }
+            })
+    }, [router])
+
+    const isNewTest = selectedTestId === '__new__'
+    const testReady = selectedTestId !== '' && (!isNewTest || newTestName.trim() !== '')
+    const canGrade = testReady && studentName.trim() !== '' && answerKey !== null && studentPaper !== null && !loading
+
     async function handleGrade() {
-        if (!answerKey || !studentPaper) return
+        if (!canGrade || !answerKey || !studentPaper) return
         setError(null)
         setResult(null)
         setLoading(true)
@@ -33,11 +59,19 @@ export default function ExamPage() {
             form.append('answerKey', answerKey)
             form.append('studentPaper', studentPaper)
             form.append('mode', mode)
+            form.append('studentName', studentName.trim())
+            if (isNewTest) {
+                form.append('testName', newTestName.trim())
+            } else {
+                form.append('testId', selectedTestId)
+            }
             const res = await apiUpload<GradeResult>('/v1/exam/grade', form)
             setResult(res.data)
+            setStudentName('')
         } catch (err) {
-            const status = (err as Error & { status?: number }).status ?? 500
-            setError(ERROR_MESSAGES[status] ?? ERROR_MESSAGES[500])
+            const e = err as Error & { status?: number }
+            const status = e.status ?? 500
+            setError(e.message && e.message !== 'Internal Server Error' ? e.message : (ERROR_MESSAGES[status] ?? ERROR_MESSAGES[500]))
         } finally {
             setLoading(false)
         }
@@ -50,6 +84,7 @@ export default function ExamPage() {
             </div>
 
             <div className="flex flex-col gap-4">
+                {/* OCR mode toggle */}
                 <div className="flex gap-2">
                     {(['printed', 'handwritten'] as OcrMode[]).map(m => (
                         <button
@@ -68,6 +103,50 @@ export default function ExamPage() {
                     ))}
                 </div>
 
+                {/* Test selector */}
+                {testsError && (
+                    <p className="text-xs text-[#e94560]">{testsError}</p>
+                )}
+                <div className="flex flex-col gap-2">
+                    <label className="text-sm text-[#aaa]">Test</label>
+                    <select
+                        value={selectedTestId}
+                        onChange={e => setSelectedTestId(e.target.value)}
+                        disabled={loading}
+                        className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] disabled:opacity-40"
+                    >
+                        <option value="">— select a test —</option>
+                        {tests.map(t => (
+                            <option key={t._id} value={t._id}>{t.name}</option>
+                        ))}
+                        <option value="__new__">New test…</option>
+                    </select>
+                    {isNewTest && (
+                        <input
+                            type="text"
+                            placeholder="New test name"
+                            value={newTestName}
+                            onChange={e => setNewTestName(e.target.value)}
+                            disabled={loading}
+                            className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] placeholder-[#555] disabled:opacity-40"
+                        />
+                    )}
+                </div>
+
+                {/* Student name input */}
+                <div className="flex flex-col gap-2">
+                    <label className="text-sm text-[#aaa]">Student Name</label>
+                    <input
+                        type="text"
+                        placeholder="Enter student name"
+                        value={studentName}
+                        onChange={e => setStudentName(e.target.value)}
+                        disabled={loading}
+                        className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] placeholder-[#555] disabled:opacity-40"
+                    />
+                </div>
+
+                {/* File upload dropzones */}
                 <div className="grid grid-cols-2 gap-4">
                     {[
                         { label: 'Answer Key', file: answerKey, set: setAnswerKey },
@@ -98,7 +177,7 @@ export default function ExamPage() {
 
                 <button
                     onClick={handleGrade}
-                    disabled={!answerKey || !studentPaper || loading}
+                    disabled={!canGrade}
                     className="bg-[#4cc9f0] text-[#0f0e17] font-semibold py-2 px-6 rounded transition-opacity disabled:opacity-40"
                 >
                     {loading ? 'Grading...' : 'Grade'}
