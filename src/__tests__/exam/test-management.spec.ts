@@ -53,6 +53,7 @@ jest.mock('../../APIs/exam/exam.model', () => ({
 }))
 
 const buf = Buffer.from('test')
+const UID = 'user-1'
 
 beforeEach(() => {
     jest.clearAllMocks()
@@ -73,65 +74,62 @@ describe('gradeExamFiles with test tracking', () => {
     it('creates a new test when testName is provided', async () => {
         mockTestCreate.mockResolvedValue({ _id: 'new-test-id', name: 'Chapter 5' })
 
-        await gradeExamFiles(buf, buf, 'printed', 'Alice', undefined, 'Chapter 5')
+        await gradeExamFiles(buf, buf, 'printed', 'Alice', UID, undefined, 'Chapter 5')
 
-        expect(mockTestCreate).toHaveBeenCalledWith('Chapter 5')
+        expect(mockTestCreate).toHaveBeenCalledWith('Chapter 5', UID)
         expect(mockRecordCreate).toHaveBeenCalledWith(expect.objectContaining({ studentName: 'Alice', testId: 'new-test-id' }))
     })
 
     it('uses existing testId when provided', async () => {
         mockTestFindById.mockResolvedValue({ _id: 'existing-id', name: 'Midterm' })
 
-        await gradeExamFiles(buf, buf, 'printed', 'Bob', 'existing-id')
+        await gradeExamFiles(buf, buf, 'printed', 'Bob', UID, 'existing-id')
 
         expect(mockTestCreate).not.toHaveBeenCalled()
+        expect(mockTestFindById).toHaveBeenCalledWith('existing-id', UID)
         expect(mockRecordCreate).toHaveBeenCalledWith(expect.objectContaining({ testId: 'existing-id', studentName: 'Bob' }))
     })
 
     it('throws 422 when neither testId nor testName is provided', async () => {
-        await expect(gradeExamFiles(buf, buf, 'printed', 'Alice')).rejects.toMatchObject({ statusCode: 422 })
+        await expect(gradeExamFiles(buf, buf, 'printed', 'Alice', UID)).rejects.toMatchObject({ statusCode: 422 })
     })
 
     it('throws 422 when studentName is empty', async () => {
-        await expect(gradeExamFiles(buf, buf, 'printed', '')).rejects.toMatchObject({ statusCode: 422 })
+        await expect(gradeExamFiles(buf, buf, 'printed', '', UID)).rejects.toMatchObject({ statusCode: 422 })
     })
 
     it('throws 404 when testId does not exist', async () => {
         mockTestFindById.mockResolvedValue(null)
-
-        await expect(gradeExamFiles(buf, buf, 'printed', 'Alice', 'bad-id')).rejects.toMatchObject({ statusCode: 404 })
+        await expect(gradeExamFiles(buf, buf, 'printed', 'Alice', UID, 'bad-id')).rejects.toMatchObject({ statusCode: 404 })
     })
 })
 
 describe('listTests', () => {
-    it('delegates to testRepository.listWithCounts', async () => {
+    it('delegates to testRepository.listWithCounts with userId', async () => {
         const tests = [{ _id: '1', name: 'Quiz', studentCount: 3 }]
         mockListWithCounts.mockResolvedValue(tests)
 
-        const result = await listTests()
+        const result = await listTests(UID)
 
+        expect(mockListWithCounts).toHaveBeenCalledWith(UID)
         expect(result).toEqual(tests)
     })
 })
 
 describe('getTestResults', () => {
     it('returns results when test exists', async () => {
-        const payload = {
-            test: { _id: '1', name: 'Quiz' },
-            stats: { avg: 75, high: 95, low: 55 },
-            records: []
-        }
+        const payload = { test: { _id: '1', name: 'Quiz' }, stats: { avg: 75, high: 95, low: 55 }, records: [] }
         mockGetResults.mockResolvedValue(payload)
 
-        const result = await getTestResults('1')
+        const result = await getTestResults('1', UID)
 
+        expect(mockGetResults).toHaveBeenCalledWith('1', UID)
         expect(result).toEqual(payload)
     })
 
     it('throws 404 when test not found', async () => {
         mockGetResults.mockResolvedValue(null)
-
-        await expect(getTestResults('bad-id')).rejects.toMatchObject({ statusCode: 404 })
+        await expect(getTestResults('bad-id', UID)).rejects.toMatchObject({ statusCode: 404 })
     })
 })
 
@@ -158,7 +156,6 @@ describe('editExamRecord', () => {
 
     it('throws 404 when record not found', async () => {
         mockRecordFindByIdAndUpdate.mockReturnValue({ lean: () => Promise.resolve(null) })
-
         await expect(editExamRecord('rec-1', questions)).rejects.toMatchObject({ statusCode: 404 })
     })
 })
