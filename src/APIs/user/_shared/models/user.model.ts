@@ -17,23 +17,11 @@ const userSchema = new mongoose.Schema<IUser>(
         },
         phoneNumber: {
             _id: false,
-            isoCode: {
-                type: String,
-                required: true
-            },
-            countryCode: {
-                type: String,
-                required: true
-            },
-            internationalNumber: {
-                type: String,
-                required: true
-            }
+            isoCode: { type: String, default: '' },
+            countryCode: { type: String, default: '' },
+            internationalNumber: { type: String, default: '' }
         },
-        timezone: {
-            type: String,
-            required: true
-        },
+        timezone: { type: String, default: '' },
         password: {
             type: String,
             required: true,
