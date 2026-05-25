@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAuth } from '@/context/auth'
 import { apiFetch } from '@/lib/api'
 import { TestItem, TestResults, ExamRecord, ExamQuestion } from '@/types/exam'
 
@@ -17,7 +18,7 @@ function scoreColor(score: ExamQuestion['score']) {
 }
 
 export default function ResultsPage() {
-    const [authReady, setAuthReady] = useState(false)
+    const { user, loading } = useAuth()
     const [tests, setTests] = useState<TestItem[]>([])
     const [selectedTestId, setSelectedTestId] = useState<string | null>(null)
     const [results, setResults] = useState<TestResults | null>(null)
@@ -29,17 +30,16 @@ export default function ResultsPage() {
     const [saving, setSaving] = useState(false)
 
     useEffect(() => {
-        apiFetch<TestItem[]>('/v1/exam/tests')
-            .then(res => {
-                setTests(res.data)
-                setAuthReady(true)
-            })
-            .catch(err => {
-                if ((err as Error & { status?: number }).status === 401) {
-                    window.location.href = '/login'
-                }
-            })
-    }, [])
+        if (!loading && !user) window.location.href = '/login'
+    }, [user, loading])
+
+    useEffect(() => {
+        if (user) {
+            apiFetch<TestItem[]>('/v1/exam/tests')
+                .then(res => setTests(res.data))
+                .catch(() => {})
+        }
+    }, [user])
 
     async function selectTest(testId: string) {
         setSelectedTestId(testId)
@@ -90,9 +90,7 @@ export default function ResultsPage() {
                 body: JSON.stringify({ questions: editQuestions })
             })
             setResults(prev =>
-                prev
-                    ? { ...prev, records: prev.records.map(r => (r._id === recordId ? res.data : r)) }
-                    : prev
+                prev ? { ...prev, records: prev.records.map(r => (r._id === recordId ? res.data : r)) } : prev
             )
             setEditingRecordId(null)
         } catch (err) {
@@ -104,11 +102,10 @@ export default function ResultsPage() {
         }
     }
 
-    if (!authReady) return null
+    if (loading || !user) return null
 
     return (
         <div className="flex h-[calc(100vh-49px)]">
-            {/* Sidebar */}
             <aside className="w-60 flex-shrink-0 border-r border-[#2a2a4a] overflow-y-auto bg-[#16213e]">
                 <div className="px-4 py-3 text-xs text-[#aaa] uppercase tracking-widest border-b border-[#2a2a4a]">
                     Tests
@@ -122,9 +119,7 @@ export default function ResultsPage() {
                             onClick={() => selectTest(test._id)}
                             className={[
                                 'w-full text-left px-4 py-3 border-b border-[#2a2a4a] transition-colors',
-                                selectedTestId === test._id
-                                    ? 'bg-[#0f3460] text-[#4cc9f0]'
-                                    : 'hover:bg-[#1a2a4a] text-[#e0e0e0]'
+                                selectedTestId === test._id ? 'bg-[#0f3460] text-[#4cc9f0]' : 'hover:bg-[#1a2a4a] text-[#e0e0e0]'
                             ].join(' ')}
                         >
                             <div className="text-sm font-medium truncate">{test.name}</div>
@@ -134,7 +129,6 @@ export default function ResultsPage() {
                 )}
             </aside>
 
-            {/* Panel */}
             <main className="flex-1 overflow-y-auto p-6">
                 {!selectedTestId && (
                     <div className="flex items-center justify-center h-full text-[#555] text-sm">
@@ -143,16 +137,13 @@ export default function ResultsPage() {
                 )}
 
                 {selectedTestId && loadingResults && (
-                    <div className="flex items-center justify-center h-full text-[#aaa] text-sm">
-                        Loading…
-                    </div>
+                    <div className="flex items-center justify-center h-full text-[#aaa] text-sm">Loading…</div>
                 )}
 
                 {selectedTestId && !loadingResults && results && (
                     <div>
                         <h2 className="text-lg font-bold text-[#4cc9f0] mb-4">{results.test.name}</h2>
 
-                        {/* Stats bar */}
                         <div className="flex gap-3 mb-6">
                             <div className="bg-[#1a3a2a] rounded px-4 py-2 text-sm">
                                 <div className="text-xs text-[#aaa] mb-0.5">Average</div>
@@ -168,12 +159,9 @@ export default function ResultsPage() {
                             </div>
                         </div>
 
-                        {/* Table */}
                         <div className="bg-[#16213e] rounded-lg overflow-hidden border border-[#2a2a4a]">
                             <div className="grid grid-cols-3 px-4 py-2 text-xs text-[#4cc9f0] uppercase tracking-widest border-b border-[#2a2a4a]">
-                                <span>Student</span>
-                                <span>Score</span>
-                                <span>%</span>
+                                <span>Student</span><span>Score</span><span>%</span>
                             </div>
 
                             {results.records.length === 0 && (
@@ -182,7 +170,6 @@ export default function ResultsPage() {
 
                             {results.records.map(record => (
                                 <div key={record._id} className="border-b border-[#2a2a4a] last:border-0">
-                                    {/* Row */}
                                     <button
                                         onClick={() => toggleExpand(record._id)}
                                         className="w-full grid grid-cols-3 px-4 py-3 text-sm text-left hover:bg-[#1a2a4a] transition-colors"
@@ -192,11 +179,9 @@ export default function ResultsPage() {
                                         <span className={pctColor(record.percentage)}>{record.percentage}%</span>
                                     </button>
 
-                                    {/* Expanded */}
                                     {expandedRecordId === record._id && (
                                         <div className="bg-[#0f0e17] px-4 pb-4 pt-2">
                                             {editingRecordId === record._id ? (
-                                                /* Edit mode */
                                                 <div>
                                                     <div className="flex flex-col gap-3 mb-4">
                                                         {editQuestions.map((q, i) => (
@@ -211,9 +196,7 @@ export default function ResultsPage() {
                                                                             onClick={() => updateEditQuestion(i, { score: s })}
                                                                             className={[
                                                                                 'px-3 py-1 rounded text-xs font-medium transition-colors',
-                                                                                q.score === s
-                                                                                    ? 'bg-[#4cc9f0] text-[#0f0e17]'
-                                                                                    : 'bg-[#2a2a4a] text-[#aaa] hover:text-[#e0e0e0]'
+                                                                                q.score === s ? 'bg-[#4cc9f0] text-[#0f0e17]' : 'bg-[#2a2a4a] text-[#aaa] hover:text-[#e0e0e0]'
                                                                             ].join(' ')}
                                                                         >
                                                                             {s}
@@ -232,29 +215,20 @@ export default function ResultsPage() {
                                                     </div>
                                                     {saveError && <p className="text-xs text-[#e94560] mb-2">{saveError}</p>}
                                                     <div className="flex gap-2">
-                                                        <button
-                                                            onClick={() => saveEdit(record._id)}
-                                                            disabled={saving}
-                                                            className="bg-[#4cc9f0] text-[#0f0e17] text-xs font-semibold px-4 py-1.5 rounded disabled:opacity-40"
-                                                        >
+                                                        <button onClick={() => saveEdit(record._id)} disabled={saving}
+                                                            className="bg-[#4cc9f0] text-[#0f0e17] text-xs font-semibold px-4 py-1.5 rounded disabled:opacity-40">
                                                             {saving ? 'Saving…' : 'Save'}
                                                         </button>
-                                                        <button
-                                                            onClick={cancelEdit}
-                                                            className="bg-[#2a2a4a] text-[#aaa] text-xs px-4 py-1.5 rounded hover:text-[#e0e0e0]"
-                                                        >
+                                                        <button onClick={cancelEdit}
+                                                            className="bg-[#2a2a4a] text-[#aaa] text-xs px-4 py-1.5 rounded hover:text-[#e0e0e0]">
                                                             Cancel
                                                         </button>
                                                     </div>
                                                 </div>
                                             ) : (
-                                                /* View mode */
                                                 <div>
                                                     <div className="flex justify-end mb-2">
-                                                        <button
-                                                            onClick={() => startEdit(record)}
-                                                            className="text-xs text-[#4cc9f0] hover:underline"
-                                                        >
+                                                        <button onClick={() => startEdit(record)} className="text-xs text-[#4cc9f0] hover:underline">
                                                             Edit
                                                         </button>
                                                     </div>
