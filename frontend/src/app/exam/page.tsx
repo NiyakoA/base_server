@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { apiFetch, apiUpload } from '@/lib/api'
 import ExamResult from '@/components/ExamResult'
 import { GradeResult, TestItem } from '@/types/exam'
@@ -16,8 +15,7 @@ const ERROR_MESSAGES: Record<number, string> = {
 }
 
 export default function ExamPage() {
-    const router = useRouter()
-
+    const [authReady, setAuthReady] = useState(false)
     const [tests, setTests] = useState<TestItem[]>([])
     const [testsError, setTestsError] = useState<string | null>(null)
     const [selectedTestId, setSelectedTestId] = useState<string>('')
@@ -31,18 +29,28 @@ export default function ExamPage() {
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
 
-    useEffect(() => {
+    const loadTests = () => {
         apiFetch<TestItem[]>('/v1/exam/tests')
-            .then(res => setTests(res.data))
+            .then(res => {
+                setTests(res.data)
+                setTestsError(null)
+                setAuthReady(true)
+            })
             .catch(err => {
                 const e = err as Error & { status?: number }
                 if (e.status === 401) {
-                    router.push('/login')
+                    window.location.href = '/login'
                 } else {
+                    setAuthReady(true)
                     setTestsError('Could not load tests — you can still create a new one below')
                 }
             })
-    }, [router])
+    }
+
+    useEffect(() => {
+        loadTests()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const isNewTest = selectedTestId === '__new__'
     const testReady = selectedTestId !== '' && (!isNewTest || newTestName.trim() !== '')
@@ -68,6 +76,7 @@ export default function ExamPage() {
             const res = await apiUpload<GradeResult>('/v1/exam/grade', form)
             setResult(res.data)
             setStudentName('')
+            loadTests()
         } catch (err) {
             const e = err as Error & { status?: number }
             const status = e.status ?? 500
@@ -76,6 +85,8 @@ export default function ExamPage() {
             setLoading(false)
         }
     }
+
+    if (!authReady) return null
 
     return (
         <div className="max-w-2xl mx-auto px-4 py-8">

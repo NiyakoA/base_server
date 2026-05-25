@@ -1,11 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
 
 export default function LoginPage() {
-    const router = useRouter()
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState<string | null>(null)
@@ -20,7 +18,7 @@ export default function LoginPage() {
                 method: 'POST',
                 body: JSON.stringify({ email, password })
             })
-            router.push('/exam')
+            window.location.href = '/exam'
         } catch (err) {
             const e = err as Error & { status?: number }
             if (e.status === 401 || e.status === 403) {

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
 import { TestItem, TestResults, ExamRecord, ExamQuestion } from '@/types/exam'
 
@@ -18,7 +17,7 @@ function scoreColor(score: ExamQuestion['score']) {
 }
 
 export default function ResultsPage() {
-    const router = useRouter()
+    const [authReady, setAuthReady] = useState(false)
     const [tests, setTests] = useState<TestItem[]>([])
     const [selectedTestId, setSelectedTestId] = useState<string | null>(null)
     const [results, setResults] = useState<TestResults | null>(null)
@@ -31,11 +30,16 @@ export default function ResultsPage() {
 
     useEffect(() => {
         apiFetch<TestItem[]>('/v1/exam/tests')
-            .then(res => setTests(res.data))
-            .catch(err => {
-                if ((err as Error & { status?: number }).status === 401) router.push('/login')
+            .then(res => {
+                setTests(res.data)
+                setAuthReady(true)
             })
-    }, [router])
+            .catch(err => {
+                if ((err as Error & { status?: number }).status === 401) {
+                    window.location.href = '/login'
+                }
+            })
+    }, [])
 
     async function selectTest(testId: string) {
         setSelectedTestId(testId)
@@ -48,7 +52,7 @@ export default function ResultsPage() {
             const res = await apiFetch<TestResults>(`/v1/exam/tests/${testId}/results`)
             setResults(res.data)
         } catch (err) {
-            if ((err as Error & { status?: number }).status === 401) router.push('/login')
+            if ((err as Error & { status?: number }).status === 401) window.location.href = '/login'
         } finally {
             setLoadingResults(false)
         }
@@ -93,12 +97,14 @@ export default function ResultsPage() {
             setEditingRecordId(null)
         } catch (err) {
             const e = err as Error & { status?: number }
-            if (e.status === 401) { router.push('/login'); return }
+            if (e.status === 401) { window.location.href = '/login'; return }
             setSaveError(e.message ?? 'Save failed')
         } finally {
             setSaving(false)
         }
     }
+
+    if (!authReady) return null
 
     return (
         <div className="flex h-[calc(100vh-49px)]">
