@@ -22,10 +22,17 @@ export interface IOcrBatchItem extends IOcrResult {
     index: number
 }
 
-export const extractText = async (imageBuffer: Buffer, mode: OcrMode = 'handwritten'): Promise<IOcrResult> => {
+export type DocumentType = 'answer_key' | 'student_paper'
+
+export const extractText = async (
+    imageBuffer: Buffer,
+    mode: OcrMode = 'handwritten',
+    documentType: DocumentType = 'student_paper'
+): Promise<IOcrResult> => {
     const form = new FormData()
     form.append('image', new Blob([imageBuffer]), 'image.bin')
     form.append('mode', mode)
+    form.append('documentType', documentType)
 
     let response: Response
     try {
