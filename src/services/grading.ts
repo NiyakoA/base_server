@@ -57,7 +57,7 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
     }
 
     if (!studentPaperText.trim()) {
-        throw new CustomError('Student paper text is empty — OCR may have failed.', 422)
+        throw new CustomError('No text detected on student paper — the page may be blank or unreadable.', 422)
     }
 
     let raw: string
