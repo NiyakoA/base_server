@@ -23,17 +23,21 @@ dayjs.extend(utc)
 export const registrationService = async (payload: IRegisterRequest) => {
     const { name, phoneNumber, email, password } = payload
 
-    // Parsing and validating phone number
-    const normalizedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber
-    const { countryCode, internationalNumber, isoCode } = parsers.parsePhoneNumber(normalizedPhone)
-    if (!countryCode || !internationalNumber || !isoCode) {
-        throw new CustomError(responseMessage.auth.INVALID_PHONE_NUMBER, 422)
-    }
+    let phoneData = { isoCode: '', countryCode: '', internationalNumber: '' }
+    let timezone = 'UTC'
 
-    // Extracting country timezone
-    const timezone = dateAndTime.countryTimezone(isoCode)
-    if (!timezone || timezone.length === 0) {
-        throw new CustomError(responseMessage.auth.INVALID_PHONE_NUMBER, 422)
+    if (phoneNumber) {
+        const normalizedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber
+        const parsed = parsers.parsePhoneNumber(normalizedPhone)
+        if (!parsed.countryCode || !parsed.internationalNumber || !parsed.isoCode) {
+            throw new CustomError(responseMessage.auth.INVALID_PHONE_NUMBER, 422)
+        }
+        const tz = dateAndTime.countryTimezone(parsed.isoCode)
+        if (!tz || tz.length === 0) {
+            throw new CustomError(responseMessage.auth.INVALID_PHONE_NUMBER, 422)
+        }
+        phoneData = { isoCode: parsed.isoCode, countryCode: parsed.countryCode, internationalNumber: parsed.internationalNumber }
+        timezone = tz[0].name
     }
 
     //Validate if user already exists
@@ -49,16 +53,12 @@ export const registrationService = async (payload: IRegisterRequest) => {
     const userObj: IUser = {
         name,
         email,
-        phoneNumber: {
-            countryCode,
-            isoCode,
-            internationalNumber
-        },
+        phoneNumber: phoneData,
         accountConfirmation: {
-            status: false,
+            status: true,
             token,
             code: OTP,
-            timestamp: null
+            timestamp: dayjs().utc().toDate()
         },
         passwordReset: {
             token: null,
@@ -67,26 +67,13 @@ export const registrationService = async (payload: IRegisterRequest) => {
         },
         lastLoginAt: null,
         role: EUserRoles.USER,
-        timezone: timezone[0].name,
+        timezone,
         password: hashedPassword,
         consent: true
     }
 
     //adding user to db
     const newUser = await query.createUser(userObj)
-
-    //Sending confirmation emails
-    const confirmationURL = `${config.FRONTEND_URL}/confirmation/${token}?code=${OTP}`
-    const to = [email]
-    const subject = `Confirm your account`
-    const text = `Hey ${name}, Please confirm your account by clicking the link belown\n\n${confirmationURL}`
-
-    emailService.sendEmail(to, subject, text).catch((error) => {
-        logger.error('Error sending email', {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            meta: error
-        })
-    })
 
     return {
         success: true,
