@@ -59,7 +59,7 @@ describe('registrationService', () => {
 
     it('throws when email already exists', async () => {
         ;(validate.userAlreadyExistsViaEmail as jest.Mock).mockRejectedValue(
-            new CustomError(responseMessage.auth.ALREADY_EXISTS(payloadNoPhone.email, 'User'), 422)
+            new CustomError(responseMessage.auth.ALREADY_EXISTS(payloadNoPhone.email, 'User'), 409)
         )
         await expect(registrationService(payloadNoPhone)).rejects.toThrow('User already exists')
     })

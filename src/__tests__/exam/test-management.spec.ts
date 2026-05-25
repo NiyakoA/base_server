@@ -40,6 +40,7 @@ jest.mock('../../APIs/exam/test.repository', () => ({
 }))
 
 const mockRecordCreate = jest.fn()
+const mockRecordFindById = jest.fn()
 const mockRecordFindByIdAndUpdate = jest.fn()
 
 jest.mock('../../APIs/exam/exam.model', () => ({
@@ -47,6 +48,8 @@ jest.mock('../../APIs/exam/exam.model', () => ({
     default: {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         create: (...args: unknown[]) => mockRecordCreate(...args),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        findById: (...args: unknown[]) => mockRecordFindById(...args),
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         findByIdAndUpdate: (...args: unknown[]) => mockRecordFindByIdAndUpdate(...args)
     }
@@ -57,6 +60,7 @@ const UID = 'user-1'
 
 beforeEach(() => {
     jest.clearAllMocks()
+    mockRecordFindById.mockReset()
     mockRecordCreate.mockResolvedValue({
         toObject: () => ({
             _id: 'rec-1',
@@ -142,10 +146,13 @@ describe('editExamRecord', () => {
 
     it('recomputes totalScore/maxScore/percentage and saves', async () => {
         const updated = { _id: 'rec-1', questions, totalScore: 2, maxScore: 3, percentage: 67 }
+        mockRecordFindById.mockReturnValue({ lean: () => Promise.resolve({ _id: 'rec-1', testId: 'test-id' }) })
+        mockTestFindById.mockResolvedValue({ _id: 'test-id', name: 'Quiz' })
         mockRecordFindByIdAndUpdate.mockReturnValue({ lean: () => Promise.resolve(updated) })
 
-        const result = await editExamRecord('rec-1', questions)
+        const result = await editExamRecord('rec-1', questions, UID)
 
+        expect(mockTestFindById).toHaveBeenCalledWith('test-id', UID)
         expect(mockRecordFindByIdAndUpdate).toHaveBeenCalledWith(
             'rec-1',
             { $set: { questions, totalScore: 2, maxScore: 3, percentage: 67 } },
@@ -155,7 +162,13 @@ describe('editExamRecord', () => {
     })
 
     it('throws 404 when record not found', async () => {
-        mockRecordFindByIdAndUpdate.mockReturnValue({ lean: () => Promise.resolve(null) })
-        await expect(editExamRecord('rec-1', questions)).rejects.toMatchObject({ statusCode: 404 })
+        mockRecordFindById.mockReturnValue({ lean: () => Promise.resolve(null) })
+        await expect(editExamRecord('rec-1', questions, UID)).rejects.toMatchObject({ statusCode: 404 })
+    })
+
+    it('throws 404 when record belongs to another user', async () => {
+        mockRecordFindById.mockReturnValue({ lean: () => Promise.resolve({ _id: 'rec-1', testId: 'test-id' }) })
+        mockTestFindById.mockResolvedValue(null)
+        await expect(editExamRecord('rec-1', questions, UID)).rejects.toMatchObject({ statusCode: 404 })
     })
 })

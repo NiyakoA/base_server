@@ -98,7 +98,11 @@ const recomputeScores = (questions: IExamQuestion[]) => {
     return { totalScore, maxScore, percentage }
 }
 
-export const editExamRecord = async (recordId: string, questions: IExamQuestion[]): Promise<IExamRecord> => {
+export const editExamRecord = async (recordId: string, questions: IExamQuestion[], userId: string): Promise<IExamRecord> => {
+    const existing = await ExamRecord.findById(recordId).lean()
+    if (!existing) throw new CustomError('Record not found', 404)
+    const test = await testRepository.findById(existing.testId.toString(), userId)
+    if (!test) throw new CustomError('Record not found', 404)
     const { totalScore, maxScore, percentage } = recomputeScores(questions)
     const record = await ExamRecord.findByIdAndUpdate(
         recordId,
