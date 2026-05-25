@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAuth } from '@/context/auth'
 import { apiFetch, apiUpload } from '@/lib/api'
 import ExamResult from '@/components/ExamResult'
 import { GradeResult, TestItem } from '@/types/exam'
@@ -15,7 +16,8 @@ const ERROR_MESSAGES: Record<number, string> = {
 }
 
 export default function ExamPage() {
-    const [authReady, setAuthReady] = useState(false)
+    const { user, loading } = useAuth()
+
     const [tests, setTests] = useState<TestItem[]>([])
     const [testsError, setTestsError] = useState<string | null>(null)
     const [selectedTestId, setSelectedTestId] = useState<string>('')
@@ -27,41 +29,35 @@ export default function ExamPage() {
     const [mode, setMode] = useState<OcrMode>('printed')
     const [result, setResult] = useState<GradeResult | null>(null)
     const [error, setError] = useState<string | null>(null)
-    const [loading, setLoading] = useState(false)
+    const [grading, setGrading] = useState(false)
+
+    useEffect(() => {
+        if (!loading && !user) window.location.href = '/login'
+    }, [user, loading])
 
     const loadTests = () => {
         apiFetch<TestItem[]>('/v1/exam/tests')
             .then(res => {
                 setTests(res.data)
                 setTestsError(null)
-                setAuthReady(true)
             })
-            .catch(err => {
-                const e = err as Error & { status?: number }
-                if (e.status === 401) {
-                    window.location.href = '/login'
-                } else {
-                    setAuthReady(true)
-                    setTestsError('Could not load tests — you can still create a new one below')
-                }
-            })
+            .catch(() => setTestsError('Could not load tests — you can still create a new one below'))
     }
 
     useEffect(() => {
-        loadTests()
+        if (user) loadTests()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [user])
 
     const isNewTest = selectedTestId === '__new__'
     const testReady = selectedTestId !== '' && (!isNewTest || newTestName.trim() !== '')
-    const canGrade = testReady && studentName.trim() !== '' && answerKey !== null && studentPaper !== null && !loading
+    const canGrade = testReady && studentName.trim() !== '' && answerKey !== null && studentPaper !== null && !grading
 
     async function handleGrade() {
         if (!canGrade || !answerKey || !studentPaper) return
         setError(null)
         setResult(null)
-        setLoading(true)
-
+        setGrading(true)
         try {
             const form = new FormData()
             form.append('answerKey', answerKey)
@@ -82,11 +78,11 @@ export default function ExamPage() {
             const status = e.status ?? 500
             setError(e.message && e.message !== 'Internal Server Error' ? e.message : (ERROR_MESSAGES[status] ?? ERROR_MESSAGES[500]))
         } finally {
-            setLoading(false)
+            setGrading(false)
         }
     }
 
-    if (!authReady) return null
+    if (loading || !user) return null
 
     return (
         <div className="max-w-2xl mx-auto px-4 py-8">
@@ -95,18 +91,15 @@ export default function ExamPage() {
             </div>
 
             <div className="flex flex-col gap-4">
-                {/* OCR mode toggle */}
                 <div className="flex gap-2">
                     {(['printed', 'handwritten'] as OcrMode[]).map(m => (
                         <button
                             key={m}
                             onClick={() => setMode(m)}
-                            disabled={loading}
+                            disabled={grading}
                             className={[
                                 'px-4 py-1.5 rounded text-sm font-medium transition-colors',
-                                mode === m
-                                    ? 'bg-[#4cc9f0] text-[#0f0e17]'
-                                    : 'bg-[#16213e] text-[#aaa] hover:text-[#4cc9f0]'
+                                mode === m ? 'bg-[#4cc9f0] text-[#0f0e17]' : 'bg-[#16213e] text-[#aaa] hover:text-[#4cc9f0]'
                             ].join(' ')}
                         >
                             {m.charAt(0).toUpperCase() + m.slice(1)}
@@ -114,16 +107,13 @@ export default function ExamPage() {
                     ))}
                 </div>
 
-                {/* Test selector */}
-                {testsError && (
-                    <p className="text-xs text-[#e94560]">{testsError}</p>
-                )}
+                {testsError && <p className="text-xs text-[#e94560]">{testsError}</p>}
                 <div className="flex flex-col gap-2">
                     <label className="text-sm text-[#aaa]">Test</label>
                     <select
                         value={selectedTestId}
                         onChange={e => setSelectedTestId(e.target.value)}
-                        disabled={loading}
+                        disabled={grading}
                         className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] disabled:opacity-40"
                     >
                         <option value="">— select a test —</option>
@@ -138,13 +128,12 @@ export default function ExamPage() {
                             placeholder="New test name"
                             value={newTestName}
                             onChange={e => setNewTestName(e.target.value)}
-                            disabled={loading}
+                            disabled={grading}
                             className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] placeholder-[#555] disabled:opacity-40"
                         />
                     )}
                 </div>
 
-                {/* Student name input */}
                 <div className="flex flex-col gap-2">
                     <label className="text-sm text-[#aaa]">Student Name</label>
                     <input
@@ -152,12 +141,11 @@ export default function ExamPage() {
                         placeholder="Enter student name"
                         value={studentName}
                         onChange={e => setStudentName(e.target.value)}
-                        disabled={loading}
+                        disabled={grading}
                         className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] placeholder-[#555] disabled:opacity-40"
                     />
                 </div>
 
-                {/* File upload dropzones */}
                 <div className="grid grid-cols-2 gap-4">
                     {[
                         { label: 'Answer Key', file: answerKey, set: setAnswerKey },
@@ -172,14 +160,12 @@ export default function ExamPage() {
                         >
                             <div className="text-2xl mb-2">📄</div>
                             <p className="text-sm text-[#4cc9f0] font-medium mb-1">{label}</p>
-                            <p className="text-xs text-[#555] truncate">
-                                {file ? file.name : 'Click to upload'}
-                            </p>
+                            <p className="text-xs text-[#555] truncate">{file ? file.name : 'Click to upload'}</p>
                             <input
                                 type="file"
                                 accept="image/png,image/jpeg,image/webp,image/tiff,application/pdf"
                                 className="hidden"
-                                disabled={loading}
+                                disabled={grading}
                                 onChange={e => set(e.target.files?.[0] ?? null)}
                             />
                         </label>
@@ -191,7 +177,7 @@ export default function ExamPage() {
                     disabled={!canGrade}
                     className="bg-[#4cc9f0] text-[#0f0e17] font-semibold py-2 px-6 rounded transition-opacity disabled:opacity-40"
                 >
-                    {loading ? 'Grading...' : 'Grade'}
+                    {grading ? 'Grading...' : 'Grade'}
                 </button>
 
                 {error && <p className="text-center text-sm text-[#e94560]">{error}</p>}
