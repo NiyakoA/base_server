@@ -72,9 +72,10 @@ export default {
 
     editRecord: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
         try {
+            const userId = (request as IAuthenticateRequest).authenticatedUser._id.toString()
             const { recordId } = request.params
             const { questions } = request.body as { questions: Parameters<typeof editExamRecord>[1] }
-            const record = await editExamRecord(recordId, questions)
+            const record = await editExamRecord(recordId, questions, userId)
             httpResponse(response, request, 200, 'Record updated successfully', record)
         } catch (error) {
             if (error instanceof CustomError) {
