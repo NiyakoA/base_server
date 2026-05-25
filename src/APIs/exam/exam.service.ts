@@ -37,7 +37,7 @@ export const gradeExamFiles = async (
     let studentPaperText: string
 
     try {
-        const keyResult = await extractText(answerKeyBuffer, mode)
+        const keyResult = await extractText(answerKeyBuffer, mode, 'answer_key')
         answerKeyText = keyResult.text
     } catch (err) {
         logger.error('OCR extraction failed for answer key', { meta: { err } })
@@ -45,7 +45,7 @@ export const gradeExamFiles = async (
     }
 
     try {
-        const paperResult = await extractText(studentPaperBuffer, mode)
+        const paperResult = await extractText(studentPaperBuffer, mode, 'student_paper')
         studentPaperText = paperResult.text
     } catch (err) {
         logger.error('OCR extraction failed for student paper', { meta: { err } })

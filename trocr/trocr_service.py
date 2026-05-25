@@ -135,13 +135,14 @@ def pdf_to_images(pdf_bytes: bytes) -> list:
 
 # ── Stage 2: Recognition ──────────────────────────────────────────────────────
 
-def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
+def ocr_printed(pil_image: Image.Image, student_paper: bool = False) -> tuple[str, int]:
     if is_blank(pil_image):
         return '', 0
 
-    # Tesseract reads ALL text on the page including pre-printed questions.
-    # Use Gemini to gate: if the student didn't mark anything, skip Tesseract.
-    if gemini_client:
+    # Tesseract reads ALL text including pre-printed questions.
+    # Only gate on student marks for the student paper — answer keys are
+    # fully printed and would fail this check.
+    if student_paper and gemini_client:
         img_bytes = _prepare_image_bytes(pil_image)
         if not _student_wrote_anything(img_bytes):
             return '', 0
@@ -192,7 +193,7 @@ def _student_wrote_anything(img_bytes: bytes) -> bool:
     return response.text.strip().upper().startswith('YES')
 
 
-def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
+def ocr_handwritten(pil_image: Image.Image, student_paper: bool = False) -> tuple[str, int]:
     if not gemini_client:
         raise RuntimeError('GEMINI_API_KEY not configured — add it to .env')
 
@@ -201,8 +202,8 @@ def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
 
     img_bytes = _prepare_image_bytes(pil_image)
 
-    # Gate: if the student wrote nothing, skip extraction entirely.
-    if not _student_wrote_anything(img_bytes):
+    # Gate: only check for student marks on the student paper, not the answer key.
+    if student_paper and not _student_wrote_anything(img_bytes):
         return '', 0
 
     response = gemini_client.models.generate_content(
@@ -221,6 +222,7 @@ def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
 def extract():
     start = time.time()
     mode = request.form.get('mode', 'handwritten')
+    student_paper = request.form.get('documentType', '') == 'student_paper'
 
     file = request.files.get('image')
     if not file:
@@ -238,7 +240,7 @@ def extract():
         texts, confs = [], []
         fn = ocr_printed if mode == 'printed' else ocr_handwritten
         for img in images:
-            t, c = fn(img)
+            t, c = fn(img, student_paper=student_paper)
             if t:
                 texts.append(t)
                 confs.append(c)
