@@ -25,7 +25,8 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
 HANDWRITING_PROMPT = (
-    'Transcribe all text visible in this image exactly as written. '
+    'Transcribe all handwritten text visible in this image exactly as written. '
+    'If the image is blank or contains no handwritten text, output only an empty string and nothing else. '
     'Output ONLY the transcribed text with no commentary, explanation, or preamble.'
 )
 
@@ -66,10 +67,23 @@ _SUFFIX = re.compile(
     r'\n\n(there\s+is\s+no\s+other\s+(visible\s+)?text.*|note\s*:.*)$',
     re.IGNORECASE,
 )
+# Gemini sometimes describes a blank image instead of returning empty.
+_BLANK_RESPONSE = re.compile(
+    r'^(the\s+image\s+(appears?\s+)?blank'
+    r'|no\s+(handwritten\s+)?(text|writing)\s+(is\s+)?(visible|present|found)'
+    r'|there\s+is\s+no\s+(handwritten\s+)?text'
+    r'|i\s+(do\s+not|don\'t|can\'t|cannot)\s+see\s+any\s+(handwritten\s+)?text'
+    r'|blank\s+(page|image|sheet)'
+    r'|the\s+page\s+is\s+blank'
+    r'|empty\s+(string|page|image))\s*\.?$',
+    re.IGNORECASE,
+)
 
 def postprocess(text: str) -> str:
     cleaned = _PREAMBLE.sub('', text.strip()).strip()
     cleaned = _SUFFIX.sub('', cleaned).strip()
+    if _BLANK_RESPONSE.match(cleaned):
+        return ''
     return cleaned
 
 
@@ -103,6 +117,10 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
             except ValueError:
                 pass
     confidence = int(sum(confs) / len(confs)) if confs else 90
+    # Blank pages produce a handful of low-confidence noise characters.
+    # Discard output that is both tiny and unreliable.
+    if confidence < 30 and len(text) < 20:
+        return '', 0
     return text, confidence
 
 
