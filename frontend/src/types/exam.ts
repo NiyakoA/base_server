@@ -12,3 +12,33 @@ export interface GradeResult {
     percentage: number
     questions: ExamQuestion[]
 }
+
+export interface TestItem {
+    _id: string
+    name: string
+    studentCount: number
+    createdAt?: string
+}
+
+export interface ExamRecord {
+    _id: string
+    testId: string
+    studentName: string
+    totalScore: number
+    maxScore: number
+    percentage: number
+    questions: ExamQuestion[]
+    createdAt?: string
+}
+
+export interface TestStats {
+    avg: number
+    high: number
+    low: number
+}
+
+export interface TestResults {
+    test: { _id: string; name: string }
+    stats: TestStats
+    records: ExamRecord[]
+}
