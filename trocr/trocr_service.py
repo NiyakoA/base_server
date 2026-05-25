@@ -139,6 +139,13 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
     if is_blank(pil_image):
         return '', 0
 
+    # Tesseract reads ALL text on the page including pre-printed questions.
+    # Use Gemini to gate: if the student didn't mark anything, skip Tesseract.
+    if gemini_client:
+        img_bytes = _prepare_image_bytes(pil_image)
+        if not _student_wrote_anything(img_bytes):
+            return '', 0
+
     pre = preprocess(pil_image)
     # PSM 3 (auto) is more robust than PSM 4 for exam pages with varying layouts.
     text = pytesseract.image_to_string(pre, config='--psm 3').strip()
