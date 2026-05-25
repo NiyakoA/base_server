@@ -12,6 +12,7 @@ if sys.stdout.encoding != 'utf-8':
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+import numpy as np
 import fitz  # PyMuPDF
 import pytesseract
 from google import genai
@@ -38,6 +39,19 @@ else:
     print('WARNING: GEMINI_API_KEY not set — handwritten mode will fail')
 
 app = Flask(__name__)
+
+
+# ── Blank page detection ──────────────────────────────────────────────────────
+
+# A blank page has almost no dark pixels — just sensor noise (~0.05%).
+# A page with any ink/handwriting will have well above 0.5% dark pixels.
+BLANK_DARK_PIXEL_RATIO = 0.005  # 0.5%
+BLANK_PIXEL_THRESHOLD = 140     # pixel value < this is considered "dark"
+
+def is_blank(pil_image: Image.Image) -> bool:
+    gray = np.array(pil_image.convert('L'))
+    dark_ratio = (gray < BLANK_PIXEL_THRESHOLD).sum() / gray.size
+    return dark_ratio < BLANK_DARK_PIXEL_RATIO
 
 
 # ── Stage 1: Preprocessing ────────────────────────────────────────────────────
@@ -67,7 +81,7 @@ _SUFFIX = re.compile(
     r'\n\n(there\s+is\s+no\s+other\s+(visible\s+)?text.*|note\s*:.*)$',
     re.IGNORECASE,
 )
-# Gemini sometimes describes a blank image instead of returning empty.
+# Catch Gemini describing a blank image instead of returning empty.
 _BLANK_RESPONSE = re.compile(
     r'^(the\s+image\s+(appears?\s+)?blank'
     r'|no\s+(handwritten\s+)?(text|writing)\s+(is\s+)?(visible|present|found)'
@@ -102,6 +116,9 @@ def pdf_to_images(pdf_bytes: bytes) -> list:
 # ── Stage 2: Recognition ──────────────────────────────────────────────────────
 
 def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
+    if is_blank(pil_image):
+        return '', 0
+
     pre = preprocess(pil_image)
     text = pytesseract.image_to_string(pre, config='--psm 4').strip()
     # Parse confidence from TSV output — avoids pandas dependency
@@ -117,16 +134,16 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
             except ValueError:
                 pass
     confidence = int(sum(confs) / len(confs)) if confs else 90
-    # Blank pages produce a handful of low-confidence noise characters.
-    # Discard output that is both tiny and unreliable.
-    if confidence < 30 and len(text) < 20:
-        return '', 0
     return text, confidence
 
 
 def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
     if not gemini_client:
         raise RuntimeError('GEMINI_API_KEY not configured — add it to .env')
+
+    if is_blank(pil_image):
+        return '', 0
+
     pre = preprocess(pil_image).convert('RGB')
     buf = io.BytesIO()
     pre.save(buf, format='JPEG', quality=95)
