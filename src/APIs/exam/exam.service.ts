@@ -16,7 +16,7 @@ const resolveTestId = async (testId?: string, testName?: string): Promise<string
     }
     if (testName?.trim()) {
         const test = await testRepository.create(testName.trim())
-        return String(test._id)
+        return test._id!.toString()
     }
     throw new CustomError('Either testId or testName is required', 422)
 }

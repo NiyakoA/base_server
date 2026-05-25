@@ -4,7 +4,7 @@ import httpError from '../../handlers/errorHandler/httpError'
 import asyncHandler from '../../handlers/async'
 import { CustomError } from '../../utils/errors'
 import { OcrMode } from '../../services/ocr'
-import { gradeExamFiles } from './exam.service'
+import { gradeExamFiles, listTests, getTestResults, editExamRecord } from './exam.service'
 
 export default {
     grade: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
@@ -17,10 +17,53 @@ export default {
                 throw new CustomError('Both answer key and student paper files are required.', 422)
             }
 
-            const mode: OcrMode = (request.body as { mode?: OcrMode } | undefined)?.mode ?? 'printed'
-            const result = await gradeExamFiles(answerKey.buffer, studentPaper.buffer, mode)
+            const body = request.body as { mode?: OcrMode; studentName?: string; testId?: string; testName?: string }
+            const mode: OcrMode = body.mode ?? 'printed'
+            const result = await gradeExamFiles(answerKey.buffer, studentPaper.buffer, mode, body.studentName ?? '', body.testId, body.testName)
 
             httpResponse(response, request, 200, 'Exam graded successfully', result)
+        } catch (error) {
+            if (error instanceof CustomError) {
+                httpError(next, error, request, error.statusCode)
+            } else {
+                httpError(next, error, request, 500)
+            }
+        }
+    }),
+
+    tests: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
+        try {
+            const tests = await listTests()
+            httpResponse(response, request, 200, 'Tests retrieved successfully', tests)
+        } catch (error) {
+            if (error instanceof CustomError) {
+                httpError(next, error, request, error.statusCode)
+            } else {
+                httpError(next, error, request, 500)
+            }
+        }
+    }),
+
+    testResults: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
+        try {
+            const { testId } = request.params
+            const results = await getTestResults(testId)
+            httpResponse(response, request, 200, 'Test results retrieved successfully', results)
+        } catch (error) {
+            if (error instanceof CustomError) {
+                httpError(next, error, request, error.statusCode)
+            } else {
+                httpError(next, error, request, 500)
+            }
+        }
+    }),
+
+    editRecord: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
+        try {
+            const { recordId } = request.params
+            const { questions } = request.body as { questions: Parameters<typeof editExamRecord>[1] }
+            const record = await editExamRecord(recordId, questions)
+            httpResponse(response, request, 200, 'Record updated successfully', record)
         } catch (error) {
             if (error instanceof CustomError) {
                 httpError(next, error, request, error.statusCode)
