@@ -121,9 +121,10 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
         return '', 0
 
     pre = preprocess(pil_image)
-    text = pytesseract.image_to_string(pre, config='--psm 4').strip()
+    # PSM 3 (auto) is more robust than PSM 4 for exam pages with varying layouts.
+    text = pytesseract.image_to_string(pre, config='--psm 3').strip()
     # Parse confidence from TSV output — avoids pandas dependency
-    tsv = pytesseract.image_to_data(pre, config='--psm 4', output_type=pytesseract.Output.STRING)
+    tsv = pytesseract.image_to_data(pre, config='--psm 3', output_type=pytesseract.Output.STRING)
     confs = []
     for line in tsv.splitlines()[1:]:  # skip header
         parts = line.split('\t')
@@ -138,6 +139,11 @@ def ocr_printed(pil_image: Image.Image) -> tuple[str, int]:
     return text, confidence
 
 
+# Gemini vision handles images best up to this dimension on each side.
+# Larger images are silently downsampled, which can cause the bottom of a
+# tall exam page to become blurry and unreadable.
+GEMINI_MAX_DIM = 2048
+
 def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
     if not gemini_client:
         raise RuntimeError('GEMINI_API_KEY not configured — add it to .env')
@@ -146,6 +152,11 @@ def ocr_handwritten(pil_image: Image.Image) -> tuple[str, int]:
         return '', 0
 
     pre = preprocess(pil_image).convert('RGB')
+
+    # Resize if either dimension exceeds Gemini's sweet spot, preserving aspect ratio.
+    if pre.width > GEMINI_MAX_DIM or pre.height > GEMINI_MAX_DIM:
+        pre.thumbnail((GEMINI_MAX_DIM, GEMINI_MAX_DIM), Image.LANCZOS)
+
     buf = io.BytesIO()
     pre.save(buf, format='JPEG', quality=95)
     response = gemini_client.models.generate_content(
