@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import './globals.css'
+import { AuthProvider } from '@/context/auth'
+import ClientNav from '@/components/ClientNav'
 
 export const metadata: Metadata = {
     title: 'Homework Grader',
@@ -11,18 +12,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     return (
         <html lang="en">
             <body className="bg-[#1a1a2e] text-[#e0e0e0] min-h-screen font-mono">
-                <nav className="border-b border-[#2a2a4a] px-6 py-3 flex items-center gap-6">
-                    <Link href="/exam" className="text-[#4cc9f0] font-bold hover:opacity-80 transition-opacity">
-                        ✦ Homework Grader
-                    </Link>
-                    <Link href="/exam" className="text-sm text-[#e0e0e0] hover:text-[#4cc9f0] transition-colors">
-                        Grade
-                    </Link>
-                    <Link href="/results" className="text-sm text-[#e0e0e0] hover:text-[#4cc9f0] transition-colors">
-                        Results
-                    </Link>
-                </nav>
-                {children}
+                <AuthProvider>
+                    <ClientNav />
+                    {children}
+                </AuthProvider>
             </body>
         </html>
     )
