@@ -74,9 +74,24 @@ describe('gradeExam', () => {
         })
     })
 
-    it('throws 422 when student paper text is empty', async () => {
-        await expect(gradeExam('answer key text', '')).rejects.toMatchObject({
-            statusCode: 422
+    it('still grades when student paper text is empty (blank paper = score 0)', async () => {
+        mockGenerateContent.mockResolvedValueOnce({
+            text: JSON.stringify({
+                totalScore: 0,
+                maxScore: 4,
+                questions: [
+                    { number: 1, correctAnswer: 'Paris', studentAnswer: '', score: 'wrong', feedback: 'No answer provided.' },
+                    { number: 2, correctAnswer: 'H2O', studentAnswer: '', score: 'wrong', feedback: 'No answer provided.' },
+                    { number: 3, correctAnswer: 'Newton', studentAnswer: '', score: 'wrong', feedback: 'No answer provided.' },
+                    { number: 4, correctAnswer: '4', studentAnswer: '', score: 'wrong', feedback: 'No answer provided.' }
+                ]
+            })
         })
+
+        const result = await gradeExam('answer key text', '')
+        expect(result.totalScore).toBe(0)
+        expect(result.maxScore).toBe(4)
+        expect(result.questions.every((q) => q.score === 'wrong')).toBe(true)
+        expect(result.questions.every((q) => q.studentAnswer === '')).toBe(true)
     })
 })

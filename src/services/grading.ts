@@ -30,7 +30,8 @@ ${studentPaperText}
 
 Instructions:
 - Include EVERY question from the answer key — do not skip any.
-- For each question, copy the student's answer verbatim from the student paper. If the student left a question blank or you cannot find their answer, use an empty string "".
+- For each question, copy the student's HANDWRITTEN answer verbatim. If the student left a question blank, wrote nothing, or the paper was blank, use an empty string "" for studentAnswer and mark it "wrong".
+- Do NOT infer, guess, or fabricate answers. Only use text actually written by the student.
 - Assign a score: "correct", "partial", or "wrong".
 - Write a one-sentence feedback explaining any mistake (use empty string "" if correct).
 - totalScore: correct=1, partial=0.5, wrong=0. maxScore = total number of questions.
@@ -56,15 +57,16 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
         throw new CustomError('Answer key text is empty — OCR may have failed.', 422)
     }
 
-    if (!studentPaperText.trim()) {
-        throw new CustomError('No text detected on student paper — the page may be blank or unreadable.', 422)
-    }
+    // Blank student paper: still grade it — every question gets wrong/empty so score is 0.
+    const resolvedStudentText = studentPaperText.trim()
+        ? studentPaperText
+        : '[BLANK PAPER — student submitted no handwritten answers. Mark every question wrong with empty studentAnswer.]'
 
     let raw: string
     try {
         const response = await getAI().models.generateContent({
             model: GEMINI_MODEL,
-            contents: buildPrompt(answerKeyText, studentPaperText)
+            contents: buildPrompt(answerKeyText, resolvedStudentText)
         })
         raw = response.text ?? ''
     } catch {
