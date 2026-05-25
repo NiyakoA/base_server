@@ -18,7 +18,7 @@ const examSchema = new mongoose.Schema<IExamRecord>(
         studentName: { type: String, required: true, trim: true },
         mode: { type: String, enum: ['handwritten', 'printed'], required: true },
         answerKeyText: { type: String, required: true },
-        studentPaperText: { type: String, required: true },
+        studentPaperText: { type: String, default: '' },
         totalScore: { type: Number, required: true },
         maxScore: { type: Number, required: true },
         percentage: { type: Number, required: true },
