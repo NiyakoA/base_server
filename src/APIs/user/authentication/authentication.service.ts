@@ -81,6 +81,7 @@ export const registrationService = async (payload: IRegisterRequest) => {
     }
 }
 
+// Kept for backwards-compatibility: existing unconfirmed accounts can still confirm via email link.
 export const accountConfirmationService = async (token: string, code: string) => {
     const user = await query.findUserByConfirmationTokenAndCode(token, code)
     if (!user) {
