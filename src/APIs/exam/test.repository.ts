@@ -14,8 +14,8 @@ const testRepository = {
     },
 
     listWithCounts: async (userId: string): Promise<ITestWithCount[]> => {
-        // Exclude answerKey buffer from list — only flag its presence
-        const tests = await TestModel.find({ userId }).select('-answerKey').sort({ createdAt: -1 }).lean()
+        // Exclude answerKey and guidePages buffers from list — only flag their presence
+        const tests = await TestModel.find({ userId }).select('-answerKey -guidePages').sort({ createdAt: -1 }).lean()
         const testIds = tests.map((t) => t._id)
         const counts = await ExamRecord.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
             { $match: { testId: { $in: testIds } } },
@@ -26,11 +26,15 @@ const testRepository = {
             .select('_id')
             .lean()
         const keySet = new Set(withKeys.map((t) => t._id?.toString() ?? ''))
+        const withGuides = await TestModel.find({ userId, 'guidePages.0': { $exists: true } })
+            .select('_id')
+            .lean()
+        const guideSet = new Set(withGuides.map((t) => t._id?.toString() ?? ''))
         return tests.map((t) => ({
             ...t,
             studentCount: countMap.get(t._id?.toString() ?? '') ?? 0,
             hasAnswerKey: keySet.has(t._id?.toString() ?? ''),
-            hasGuide: !!(t.guideSources && t.guideSources.length > 0)
+            hasGuide: guideSet.has(t._id?.toString() ?? '')
         }))
     },
 
