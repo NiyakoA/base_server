@@ -185,7 +185,9 @@ export interface ScoredPage {
 
 export function scorePages(keywords: string[], pages: IGuidePage[], idf: Map<string, number>): ScoredPage[] {
     return pages.map((page) => {
-        const stemmedWords = tokenize(page.text).map(stem)
+        const stemmedWords = tokenize(page.text)
+            .map(stem)
+            .filter((w) => w.length > 2)
         const freq = new Map<string, number>()
         for (const w of stemmedWords) freq.set(w, (freq.get(w) ?? 0) + 1)
 
@@ -263,7 +265,8 @@ ${segments.map((s) => `Question ${s.qNum}: ${s.text}`).join('\n')}`.trim()
     try {
         const raw = await callGeminiWithBackoff(prompt)
         return parseKeywordMap(raw)
-    } catch {
+    } catch (err) {
+        logger.warn?.('Gemini keyword fallback failed', { meta: { error: (err as Error).message } })
         return {}
     }
 }
@@ -310,6 +313,9 @@ export const gradeExamGuided = async (
     const resolvedText = studentPaperText.trim() ? studentPaperText : '[BLANK PAPER — mark every question wrong with empty studentAnswer.]'
 
     const segments = parseQuestionSegments(resolvedText)
+    if (segments.length === 0) {
+        throw new CustomError('No numbered questions detected in the student paper — ensure questions are formatted as "1." or "1)"', 422)
+    }
     const idf = computeIdf(guidePages)
     const qPages: QPages[] = []
     const fallbackNeeded: typeof segments = []
