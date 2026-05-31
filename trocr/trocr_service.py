@@ -20,7 +20,8 @@ from google.genai import types as genai_types
 from flask import Flask, jsonify, request
 from PIL import Image, ImageFilter, ImageEnhance
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+TESSERACT_CMD = os.environ.get('TESSERACT_CMD', r'C:\Program Files\Tesseract-OCR\tesseract.exe')
+pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
@@ -324,6 +325,47 @@ def extract():
         if 'API_KEY_INVALID' in err_str or 'invalid api key' in err_str.lower():
             return jsonify({'error': 'Gemini API key is invalid — check GEMINI_API_KEY in .env'}), 503
         return jsonify({'error': f'Processing failed: {e}'}), 500
+
+
+@app.route('/extract-guide', methods=['POST'])
+def extract_guide():
+    start = time.time()
+    file = request.files.get('pdf')
+    if not file:
+        return jsonify({'error': 'No PDF provided'}), 422
+
+    raw = file.read()
+    filename = file.filename or 'guide.pdf'
+
+    try:
+        doc = fitz.open(stream=raw, filetype='pdf')
+    except Exception as e:
+        return jsonify({'error': f'Could not open PDF "{filename}": {e}'}), 422
+
+    pages = []
+    for page_num, page in enumerate(doc, start=1):
+        text = page.get_text().strip()
+        if len(text) < 50:
+            # Scanned page fallback: render and run Tesseract
+            try:
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                pil_img = Image.frombytes('RGB', [pix.width, pix.height], pix.samples)
+                text = pytesseract.image_to_string(preprocess(pil_img), config='--psm 3').strip()
+            except Exception:
+                text = ''
+        pages.append({'pageNumber': page_num, 'text': text, 'source': filename})
+    doc.close()
+
+    readable_count = sum(1 for p in pages if p['text'])
+    if readable_count == 0:
+        return jsonify({'error': f'No readable text found in "{filename}"'}), 422
+
+    return jsonify({
+        'pages': pages,
+        'pageCount': len(pages),
+        'readableCount': readable_count,
+        'processingTimeMs': int((time.time() - start) * 1000)
+    })
 
 
 if __name__ == '__main__':
