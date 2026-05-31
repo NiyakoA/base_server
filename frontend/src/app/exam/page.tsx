@@ -41,7 +41,10 @@ export default function ExamPage() {
                 setTests(res.data)
                 setTestsError(null)
             })
-            .catch(() => setTestsError('Could not load tests — you can still create a new one below'))
+            .catch((err: Error & { status?: number }) => {
+                if (err.status === 401) { window.location.href = '/login'; return }
+                setTestsError('Could not load tests — you can still create a new one below')
+            })
     }
 
     useEffect(() => {
@@ -49,18 +52,21 @@ export default function ExamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user])
 
+    const selectedTest = tests.find(t => t._id === selectedTestId) ?? null
     const isNewTest = selectedTestId === '__new__'
     const testReady = selectedTestId !== '' && (!isNewTest || newTestName.trim() !== '')
-    const canGrade = testReady && studentName.trim() !== '' && answerKey !== null && studentPaper !== null && !grading
+    // Answer key is optional when the selected test already has one saved
+    const keyReady = answerKey !== null || (!isNewTest && selectedTest?.hasAnswerKey === true)
+    const canGrade = testReady && studentName.trim() !== '' && keyReady && studentPaper !== null && !grading
 
     async function handleGrade() {
-        if (!canGrade || !answerKey || !studentPaper) return
+        if (!canGrade || !studentPaper) return
         setError(null)
         setResult(null)
         setGrading(true)
         try {
             const form = new FormData()
-            form.append('answerKey', answerKey)
+            if (answerKey) form.append('answerKey', answerKey)
             form.append('studentPaper', studentPaper)
             form.append('mode', mode)
             form.append('studentName', studentName.trim())
@@ -72,10 +78,19 @@ export default function ExamPage() {
             const res = await apiUpload<GradeResult>('/v1/exam/grade', form)
             setResult(res.data)
             setStudentName('')
+            setStudentPaper(null)
+            setAnswerKey(null)
+            // Auto-select the test so subsequent students go to the same test
+            setSelectedTestId(res.data.testId)
+            setNewTestName('')
             loadTests()
         } catch (err) {
             const e = err as Error & { status?: number }
             const status = e.status ?? 500
+            if (status === 401) {
+                window.location.href = '/login'
+                return
+            }
             setError(e.message && e.message !== 'Internal Server Error' ? e.message : (ERROR_MESSAGES[status] ?? ERROR_MESSAGES[500]))
         } finally {
             setGrading(false)
@@ -112,7 +127,7 @@ export default function ExamPage() {
                     <label className="text-sm text-[#aaa]">Test</label>
                     <select
                         value={selectedTestId}
-                        onChange={e => setSelectedTestId(e.target.value)}
+                        onChange={e => { setSelectedTestId(e.target.value); setAnswerKey(null) }}
                         disabled={grading}
                         className="bg-[#16213e] text-[#ccc] border border-[#4cc9f0]/30 rounded px-3 py-2 text-sm focus:outline-none focus:border-[#4cc9f0] disabled:opacity-40"
                     >
@@ -147,29 +162,53 @@ export default function ExamPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    {[
-                        { label: 'Answer Key', file: answerKey, set: setAnswerKey },
-                        { label: 'Student Paper', file: studentPaper, set: setStudentPaper }
-                    ].map(({ label, file, set }) => (
-                        <label
-                            key={label}
-                            className={[
-                                'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
-                                file ? 'border-[#4cc9f0] bg-[#0f3460]/20' : 'border-[#4cc9f0]/40 hover:border-[#4cc9f0]'
-                            ].join(' ')}
-                        >
-                            <div className="text-2xl mb-2">📄</div>
-                            <p className="text-sm text-[#4cc9f0] font-medium mb-1">{label}</p>
-                            <p className="text-xs text-[#555] truncate">{file ? file.name : 'Click to upload'}</p>
-                            <input
-                                type="file"
-                                accept="image/png,image/jpeg,image/webp,image/tiff,application/pdf"
-                                className="hidden"
-                                disabled={grading}
-                                onChange={e => set(e.target.files?.[0] ?? null)}
-                            />
-                        </label>
-                    ))}
+                    {/* Answer Key — optional if test already has one saved */}
+                    <label
+                        className={[
+                            'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
+                            answerKey
+                                ? 'border-[#4cc9f0] bg-[#0f3460]/20'
+                                : selectedTest?.hasAnswerKey
+                                    ? 'border-[#4cc9f0]/60 bg-[#0f3460]/10'
+                                    : 'border-[#4cc9f0]/40 hover:border-[#4cc9f0]'
+                        ].join(' ')}
+                    >
+                        <div className="text-2xl mb-2">📄</div>
+                        <p className="text-sm text-[#4cc9f0] font-medium mb-1">Answer Key</p>
+                        <p className="text-xs text-[#555] truncate">
+                            {answerKey
+                                ? answerKey.name
+                                : selectedTest?.hasAnswerKey
+                                    ? '✓ Saved — drop to replace'
+                                    : 'Click to upload'}
+                        </p>
+                        <input
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.webp,.tiff,.pdf,image/png,image/jpeg,image/webp,image/tiff,application/pdf"
+                            className="hidden"
+                            disabled={grading}
+                            onChange={e => setAnswerKey(e.target.files?.[0] ?? null)}
+                        />
+                    </label>
+
+                    {/* Student Paper */}
+                    <label
+                        className={[
+                            'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
+                            studentPaper ? 'border-[#4cc9f0] bg-[#0f3460]/20' : 'border-[#4cc9f0]/40 hover:border-[#4cc9f0]'
+                        ].join(' ')}
+                    >
+                        <div className="text-2xl mb-2">📄</div>
+                        <p className="text-sm text-[#4cc9f0] font-medium mb-1">Student Paper</p>
+                        <p className="text-xs text-[#555] truncate">{studentPaper ? studentPaper.name : 'Click to upload'}</p>
+                        <input
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.webp,.tiff,.pdf,image/png,image/jpeg,image/webp,image/tiff,application/pdf"
+                            className="hidden"
+                            disabled={grading}
+                            onChange={e => setStudentPaper(e.target.files?.[0] ?? null)}
+                        />
+                    </label>
                 </div>
 
                 <button

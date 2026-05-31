@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth, AuthUser } from '@/context/auth'
 import { apiFetch } from '@/lib/api'
 
 type Tab = 'signin' | 'signup'
 
 export default function LoginPage() {
-    const { login } = useAuth()
+    const { login, user, loading: authLoading } = useAuth()
     const [tab, setTab] = useState<Tab>('signin')
 
     const [email, setEmail] = useState('')
@@ -21,6 +21,10 @@ export default function LoginPage() {
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
 
+    useEffect(() => {
+        if (!authLoading && user) window.location.replace('/exam')
+    }, [user, authLoading])
+
     async function handleSignIn(e: React.FormEvent) {
         e.preventDefault()
         setError(null)
@@ -29,7 +33,6 @@ export default function LoginPage() {
             await apiFetch('/v1/login', { method: 'POST', body: JSON.stringify({ email, password }) })
             const me = await apiFetch<AuthUser>('/v1/user/me')
             login(me.data)
-            window.location.href = '/exam'
         } catch (err) {
             const e = err as Error & { status?: number }
             setError(e.status === 400 || e.status === 404 || e.status === 403 ? 'Invalid email or password' : (e.message ?? 'Sign in failed'))
@@ -54,7 +57,6 @@ export default function LoginPage() {
             await apiFetch('/v1/login', { method: 'POST', body: JSON.stringify({ email: signupEmail, password: signupPassword }) })
             const me = await apiFetch<AuthUser>('/v1/user/me')
             login(me.data)
-            window.location.href = '/exam'
         } catch (err) {
             const e = err as Error & { status?: number }
             setError(e.status === 409 ? 'An account with that email already exists' : (e.message ?? 'Sign up failed'))

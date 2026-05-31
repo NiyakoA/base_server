@@ -14,17 +14,32 @@ const testRepository = {
     },
 
     listWithCounts: async (userId: string): Promise<ITestWithCount[]> => {
-        const tests = await TestModel.find({ userId }).sort({ createdAt: -1 }).lean()
+        // Exclude answerKey buffer from list — only flag its presence
+        const tests = await TestModel.find({ userId }).select('-answerKey').sort({ createdAt: -1 }).lean()
         const testIds = tests.map((t) => t._id)
         const counts = await ExamRecord.aggregate<{ _id: mongoose.Types.ObjectId; count: number }>([
             { $match: { testId: { $in: testIds } } },
             { $group: { _id: '$testId', count: { $sum: 1 } } }
         ])
         const countMap = new Map(counts.map((c) => [c._id.toString(), c.count]))
+        const withKeys = await TestModel.find({ userId, answerKey: { $exists: true } })
+            .select('_id')
+            .lean()
+        const keySet = new Set(withKeys.map((t) => t._id?.toString() ?? ''))
         return tests.map((t) => ({
             ...t,
-            studentCount: countMap.get(t._id?.toString() ?? '') ?? 0
+            studentCount: countMap.get(t._id?.toString() ?? '') ?? 0,
+            hasAnswerKey: keySet.has(t._id?.toString() ?? '')
         }))
+    },
+
+    saveAnswerKey: async (id: string, userId: string, buffer: Buffer): Promise<void> => {
+        await TestModel.updateOne({ _id: id, userId }, { $set: { answerKey: buffer } })
+    },
+
+    getAnswerKey: async (id: string, userId: string): Promise<Buffer | null> => {
+        const doc = await TestModel.findOne({ _id: id, userId }).select('answerKey').lean()
+        return doc?.answerKey ?? null
     },
 
     getResults: async (testId: string, userId: string): Promise<ITestResults | null> => {

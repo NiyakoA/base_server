@@ -22,27 +22,39 @@ const resolveTestId = async (testId: string | undefined, testName: string | unde
 }
 
 export const gradeExamFiles = async (
-    answerKeyBuffer: Buffer,
+    answerKeyBuffer: Buffer | null,
     studentPaperBuffer: Buffer,
     mode: OcrMode,
     studentName: string,
     userId: string,
     testId?: string,
     testName?: string
-): Promise<IExamRecord> => {
+): Promise<IExamRecord & { testId: string }> => {
     if (!studentName?.trim()) throw new CustomError('Student name is required', 422)
 
     const resolvedTestId = await resolveTestId(testId, testName, userId)
+
+    // Use provided key or fall back to the test's stored key
+    let effectiveKeyBuffer: Buffer
+    if (answerKeyBuffer) {
+        effectiveKeyBuffer = answerKeyBuffer
+        await testRepository.saveAnswerKey(resolvedTestId, userId, answerKeyBuffer)
+    } else {
+        const stored = await testRepository.getAnswerKey(resolvedTestId, userId)
+        if (!stored) throw new CustomError('No answer key uploaded for this test — please upload one.', 422)
+        effectiveKeyBuffer = stored
+    }
 
     let answerKeyText: string
     let studentPaperText: string
 
     try {
-        const keyResult = await extractText(answerKeyBuffer, mode, 'answer_key')
+        const keyResult = await extractText(effectiveKeyBuffer, mode, 'answer_key')
         answerKeyText = keyResult.text
     } catch (err) {
         logger.error('OCR extraction failed for answer key', { meta: { err } })
-        throw new CustomError('Could not extract text from answer key.', 422)
+        const msg = err instanceof CustomError ? err.message : 'Could not extract text from answer key.'
+        throw new CustomError(`Answer key: ${msg}`, 422)
     }
 
     try {
@@ -50,10 +62,11 @@ export const gradeExamFiles = async (
         studentPaperText = paperResult.text
     } catch (err) {
         logger.error('OCR extraction failed for student paper', { meta: { err } })
-        throw new CustomError('Could not extract text from student paper.', 422)
+        const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
+        throw new CustomError(`Student paper: ${msg}`, 422)
     }
 
-    const grading = await gradeExam(answerKeyText, studentPaperText)
+    const grading = await gradeExam(answerKeyText, studentPaperText, mode)
     const percentage = grading.maxScore > 0 ? Math.round((grading.totalScore / grading.maxScore) * 100) : 0
 
     let record
@@ -74,7 +87,7 @@ export const gradeExamFiles = async (
         throw new CustomError('Grading failed — could not save result.', 500)
     }
 
-    return record.toObject() as IExamRecord
+    return { ...(record.toObject() as IExamRecord), testId: resolvedTestId }
 }
 
 export const listTests = async (userId: string): Promise<ITestWithCount[]> => {

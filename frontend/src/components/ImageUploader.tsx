@@ -46,7 +46,7 @@ export default function ImageUploader({ onUpload, disabled, multiple = false }: 
             <input
                 ref={inputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/tiff,application/pdf"
+                accept=".jpg,.jpeg,.png,.webp,.tiff,.pdf,image/png,image/jpeg,image/webp,image/tiff,application/pdf"
                 multiple={multiple}
                 className="hidden"
                 onChange={e => handleFiles(e.target.files)}

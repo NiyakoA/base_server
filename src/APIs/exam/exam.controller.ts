@@ -14,15 +14,15 @@ export default {
             const answerKey = files?.['answerKey']?.[0]
             const studentPaper = files?.['studentPaper']?.[0]
 
-            if (!answerKey || !studentPaper) {
-                throw new CustomError('Both answer key and student paper files are required.', 422)
+            if (!studentPaper) {
+                throw new CustomError('Student paper file is required.', 422)
             }
 
             const userId = (request as IAuthenticateRequest).authenticatedUser._id.toString()
             const body = request.body as { mode?: OcrMode; studentName?: string; testId?: string; testName?: string }
             const mode: OcrMode = body.mode ?? 'printed'
             const result = await gradeExamFiles(
-                answerKey.buffer,
+                answerKey?.buffer ?? null,
                 studentPaper.buffer,
                 mode,
                 body.studentName ?? '',

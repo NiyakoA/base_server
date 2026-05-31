@@ -5,11 +5,13 @@ export interface ITest {
     _id?: mongoose.Types.ObjectId
     userId: mongoose.Types.ObjectId | string
     name: string
+    answerKey?: Buffer
     createdAt?: Date
 }
 
-export interface ITestWithCount extends ITest {
+export interface ITestWithCount extends Omit<ITest, 'answerKey'> {
     studentCount: number
+    hasAnswerKey: boolean
 }
 
 export interface ITestStats {
