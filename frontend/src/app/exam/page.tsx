@@ -28,7 +28,6 @@ export default function ExamPage() {
     const [studentName, setStudentName] = useState<string>('')
     const [answerKey, setAnswerKey] = useState<File | null>(null)
     const [studentPaper, setStudentPaper] = useState<File | null>(null)
-    const [guideFiles, setGuideFiles] = useState<File[]>([])
     const [mode, setMode] = useState<OcrMode>('printed')
 
     const [result, setResult] = useState<GradeResult | null>(null)
@@ -134,7 +133,6 @@ export default function ExamPage() {
     async function handleGuideUpload(files: FileList | null) {
         if (!files || files.length === 0 || !selectedTestId || isNewTest) return
         const arr = Array.from(files)
-        setGuideFiles(arr)
         setGuideStatus('uploading')
         setGuideError(null)
         try {
@@ -157,7 +155,7 @@ export default function ExamPage() {
             if (!window.confirm('This will remove your saved guide PDFs. Continue?')) return
         }
         setGradingMode(next)
-        setAnswerKey(null); setGuideFiles([]); setGuideStatus('idle'); setGuideJobId(null); setGuideError(null)
+        setAnswerKey(null); setGuideStatus('idle'); setGuideJobId(null); setGuideError(null)
     }
 
     if (loading || !user) return null
