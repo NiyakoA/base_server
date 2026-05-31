@@ -41,7 +41,8 @@ export const extractText = async (
     let response: Response
     try {
         response = await fetch(`${TROCR_URL}/extract`, { method: 'POST', body: form, signal: controller.signal })
-    } catch {
+    } catch (err) {
+        logger.error('OCR fetch failed', { meta: { error: (err as Error).message } })
         throw new CustomError('OCR service unavailable', 503)
     } finally {
         clearTimeout(timer)
@@ -76,7 +77,8 @@ export const extractGuidePages = async (pdfBuffer: Buffer, filename: string): Pr
     let response: Response
     try {
         response = await fetch(`${TROCR_URL}/extract-guide`, { method: 'POST', body: form, signal: controller.signal })
-    } catch {
+    } catch (err) {
+        logger.error('OCR fetch failed', { meta: { error: (err as Error).message } })
         throw new CustomError('OCR service unavailable', 503)
     } finally {
         clearTimeout(timer)
