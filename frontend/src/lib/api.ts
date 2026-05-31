@@ -44,3 +44,13 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<Ba
 
     return res.json() as Promise<BackendResponse<T>>
 }
+
+export async function uploadGuides(testId: string, files: File[]): Promise<BackendResponse<{ jobId: string }>> {
+    const form = new FormData()
+    files.forEach(f => form.append('guides', f))
+    return apiUpload<{ jobId: string }>(`/v1/exam/tests/${testId}/guides`, form)
+}
+
+export async function pollGuideJob(testId: string, jobId: string): Promise<BackendResponse<import('@/types/exam').GuideJobPoll>> {
+    return apiFetch(`/v1/exam/tests/${testId}/guides/job/${jobId}`)
+}
