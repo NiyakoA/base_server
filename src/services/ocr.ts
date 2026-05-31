@@ -1,12 +1,13 @@
 // src/services/ocr.ts
 import { CustomError } from '../utils/errors'
+import { IGuidePage } from '../APIs/exam/types/exam.interface'
 
-// require() bypasses ts-jest's __importDefault wrapping, which double-nests
-// the default export when the Jest mock factory omits __esModule:true.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const logger = (require('../handlers/logger') as { default: typeof import('../handlers/logger').default }).default
 
 const TROCR_URL = process.env.TROCR_URL ?? 'http://localhost:5001'
+const EXTRACT_TIMEOUT_MS = 120_000 // 2 min for student paper / answer key
+const GUIDE_TIMEOUT_MS = 300_000 // 5 min for guide PDF (may have scanned pages)
 
 export type OcrMode = 'handwritten' | 'printed'
 
@@ -34,11 +35,16 @@ export const extractText = async (
     form.append('mode', mode)
     form.append('documentType', documentType)
 
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS)
+
     let response: Response
     try {
-        response = await fetch(`${TROCR_URL}/extract`, { method: 'POST', body: form })
+        response = await fetch(`${TROCR_URL}/extract`, { method: 'POST', body: form, signal: controller.signal })
     } catch {
         throw new CustomError('OCR service unavailable', 503)
+    } finally {
+        clearTimeout(timer)
     }
 
     if (!response.ok) {
@@ -57,15 +63,34 @@ export const extractText = async (
         meta: { confidence: data.confidence, pipeline: data.pipeline, processingTimeMs: data.processingTimeMs, mode }
     })
 
-    return {
-        text: data.text,
-        confidence: data.confidence,
-        processingTimeMs: data.processingTimeMs,
-        pipeline: data.pipeline
-    }
+    return { text: data.text, confidence: data.confidence, processingTimeMs: data.processingTimeMs, pipeline: data.pipeline }
 }
 
-// Runs all files concurrently — throttled naturally by the OCR service's GPU.
+export const extractGuidePages = async (pdfBuffer: Buffer, filename: string): Promise<IGuidePage[]> => {
+    const form = new FormData()
+    form.append('pdf', new Blob([pdfBuffer]), filename)
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), GUIDE_TIMEOUT_MS)
+
+    let response: Response
+    try {
+        response = await fetch(`${TROCR_URL}/extract-guide`, { method: 'POST', body: form, signal: controller.signal })
+    } catch {
+        throw new CustomError('OCR service unavailable', 503)
+    } finally {
+        clearTimeout(timer)
+    }
+
+    if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new CustomError(body.error ?? `Guide extraction error (${response.status})`, response.status === 422 ? 422 : 500)
+    }
+
+    const data = (await response.json()) as { pages: IGuidePage[] }
+    return data.pages
+}
+
 export const extractBatch = async (
     files: Array<{ buffer: Buffer; originalname: string }>,
     mode: OcrMode = 'handwritten'
