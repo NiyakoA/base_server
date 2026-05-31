@@ -11,15 +11,19 @@ import { IExamRecord, IExamQuestion, ITestWithCount, ITestResults, IGuidePage, I
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const logger = (require('../../handlers/logger') as { default: typeof import('../../handlers/logger').default }).default
 
-const resolveTestId = async (testId: string | undefined, testName: string | undefined, userId: string): Promise<string> => {
+const resolveTestId = async (
+    testId: string | undefined,
+    testName: string | undefined,
+    userId: string
+): Promise<{ resolvedId: string; test: import('./types/exam.interface').ITest | null }> => {
     if (testId) {
         const test = await testRepository.findById(testId, userId)
         if (!test) throw new CustomError('Test not found', 404)
-        return testId
+        return { resolvedId: testId, test }
     }
     if (testName?.trim()) {
-        const test = await testRepository.create(testName.trim(), userId)
-        return test._id!.toString()
+        const created = await testRepository.create(testName.trim(), userId)
+        return { resolvedId: created._id!.toString(), test: null }
     }
     throw new CustomError('Either testId or testName is required', 422)
 }
@@ -35,8 +39,7 @@ export const gradeExamFiles = async (
 ): Promise<IExamRecord & { testId: string }> => {
     if (!studentName?.trim()) throw new CustomError('Student name is required', 422)
 
-    const resolvedTestId = await resolveTestId(testId, testName, userId)
-    const test = await testRepository.findById(resolvedTestId, userId)
+    const { resolvedId: resolvedTestId, test } = await resolveTestId(testId, testName, userId)
 
     // ── Guided-book grading branch ────────────────────────────────────────────
     if (test?.gradingMode === 'guidedBook') {
@@ -171,7 +174,8 @@ async function runGuideExtraction(
             try {
                 pages = await extractGuidePages(file.buffer, file.originalname)
             } catch (err) {
-                const msg = err instanceof CustomError ? err.message : `Failed to extract ${file.originalname}`
+                const baseMsg = err instanceof CustomError ? err.message : `Failed to extract ${file.originalname}`
+                const msg = `${baseMsg} — re-upload all guide files to retry.`
                 jobStore.updateJob(jobId, { status: 'failed', error: { message: msg, filename: file.originalname } })
                 return
             }
@@ -195,7 +199,8 @@ async function runGuideExtraction(
         await testRepository.saveGuidePages(testId, userId, allPages, sources)
         jobStore.updateJob(jobId, { status: 'succeeded', result: { pageCount: allPages.length, sources } })
         logger.info('Guide extraction complete', { meta: { testId, pages: allPages.length } })
-    } catch {
+    } catch (err) {
+        logger.error('Guide extraction failed unexpectedly', { meta: { jobId, error: (err as Error).message } })
         jobStore.updateJob(jobId, { status: 'failed', error: { message: 'Extraction failed unexpectedly.' } })
     }
 }
