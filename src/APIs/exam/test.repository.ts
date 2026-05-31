@@ -29,7 +29,8 @@ const testRepository = {
         return tests.map((t) => ({
             ...t,
             studentCount: countMap.get(t._id?.toString() ?? '') ?? 0,
-            hasAnswerKey: keySet.has(t._id?.toString() ?? '')
+            hasAnswerKey: keySet.has(t._id?.toString() ?? ''),
+            hasGuide: !!(t.guideSources && t.guideSources.length > 0)
         }))
     },
 
