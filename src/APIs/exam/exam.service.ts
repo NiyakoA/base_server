@@ -1,9 +1,12 @@
+// src/APIs/exam/exam.service.ts
 import { CustomError } from '../../utils/errors'
-import { extractText, OcrMode } from '../../services/ocr'
+import { extractText, extractGuidePages, OcrMode } from '../../services/ocr'
 import { gradeExam } from '../../services/grading'
+import { gradeExamGuided } from '../../services/guidedGrading'
+import * as jobStore from '../../services/guideJobs'
 import ExamRecord from './exam.model'
 import testRepository from './test.repository'
-import { IExamRecord, IExamQuestion, ITestWithCount, ITestResults } from './types/exam.interface'
+import { IExamRecord, IExamQuestion, ITestWithCount, ITestResults, IGuidePage, IGuideSource, IGuideJob } from './types/exam.interface'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const logger = (require('../../handlers/logger') as { default: typeof import('../../handlers/logger').default }).default
@@ -33,8 +36,53 @@ export const gradeExamFiles = async (
     if (!studentName?.trim()) throw new CustomError('Student name is required', 422)
 
     const resolvedTestId = await resolveTestId(testId, testName, userId)
+    const test = await testRepository.findById(resolvedTestId, userId)
 
-    // Use provided key or fall back to the test's stored key
+    // ── Guided-book grading branch ────────────────────────────────────────────
+    if (test?.gradingMode === 'guidedBook') {
+        const activeJob = jobStore.getActiveJobForTest(resolvedTestId)
+        if (activeJob) throw new CustomError('Guide is still being processed — try again shortly.', 409)
+
+        const guideInfo = await testRepository.getGuidePages(resolvedTestId, userId)
+        if (!guideInfo || guideInfo.pages.length === 0) {
+            throw new CustomError('No guide pages available for this test — upload a guide PDF first.', 422)
+        }
+
+        let studentPaperText: string
+        try {
+            const paperResult = await extractText(studentPaperBuffer, mode, 'student_paper')
+            studentPaperText = paperResult.text
+        } catch (err) {
+            const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
+            throw new CustomError(`Student paper: ${msg}`, 422)
+        }
+
+        const grading = await gradeExamGuided(guideInfo.pages, studentPaperText, mode)
+        const percentage = grading.maxScore > 0 ? Math.round((grading.totalScore / grading.maxScore) * 100) : 0
+
+        let record
+        try {
+            record = await ExamRecord.create({
+                testId: resolvedTestId,
+                studentName: studentName.trim(),
+                mode,
+                gradingMode: 'guidedBook',
+                answerKeyText: '',
+                studentPaperText,
+                totalScore: grading.totalScore,
+                maxScore: grading.maxScore,
+                percentage,
+                questions: grading.questions
+            })
+        } catch (err) {
+            logger.error('Failed to save guided exam record', { meta: { err } })
+            throw new CustomError('Grading failed — could not save result.', 500)
+        }
+
+        return { ...(record.toObject() as IExamRecord), testId: resolvedTestId }
+    }
+
+    // ── Answer-key grading branch (existing flow) ─────────────────────────────
     let effectiveKeyBuffer: Buffer
     if (answerKeyBuffer) {
         effectiveKeyBuffer = answerKeyBuffer
@@ -49,19 +97,15 @@ export const gradeExamFiles = async (
     let studentPaperText: string
 
     try {
-        const keyResult = await extractText(effectiveKeyBuffer, mode, 'answer_key')
-        answerKeyText = keyResult.text
+        answerKeyText = (await extractText(effectiveKeyBuffer, mode, 'answer_key')).text
     } catch (err) {
-        logger.error('OCR extraction failed for answer key', { meta: { err } })
         const msg = err instanceof CustomError ? err.message : 'Could not extract text from answer key.'
         throw new CustomError(`Answer key: ${msg}`, 422)
     }
 
     try {
-        const paperResult = await extractText(studentPaperBuffer, mode, 'student_paper')
-        studentPaperText = paperResult.text
+        studentPaperText = (await extractText(studentPaperBuffer, mode, 'student_paper')).text
     } catch (err) {
-        logger.error('OCR extraction failed for student paper', { meta: { err } })
         const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
         throw new CustomError(`Student paper: ${msg}`, 422)
     }
@@ -75,6 +119,7 @@ export const gradeExamFiles = async (
             testId: resolvedTestId,
             studentName: studentName.trim(),
             mode,
+            gradingMode: 'answerKey',
             answerKeyText,
             studentPaperText,
             totalScore: grading.totalScore,
@@ -90,9 +135,80 @@ export const gradeExamFiles = async (
     return { ...(record.toObject() as IExamRecord), testId: resolvedTestId }
 }
 
-export const listTests = async (userId: string): Promise<ITestWithCount[]> => {
-    return testRepository.listWithCounts(userId)
+// ── Guide upload ──────────────────────────────────────────────────────────────
+
+export const startGuideUpload = async (
+    testId: string,
+    userId: string,
+    files: Array<{ buffer: Buffer; originalname: string }>
+): Promise<{ jobId: string }> => {
+    const test = await testRepository.findById(testId, userId)
+    if (!test) throw new CustomError('Test not found', 404)
+
+    const existing = jobStore.getActiveJobForTest(testId)
+    if (existing) throw new CustomError('A guide upload is already processing for this test — wait for it to finish.', 409)
+
+    const job = jobStore.createJob(testId, userId, files.length)
+    void runGuideExtraction(job.jobId, testId, userId, files)
+    return { jobId: job.jobId }
 }
+
+async function runGuideExtraction(
+    jobId: string,
+    testId: string,
+    userId: string,
+    files: Array<{ buffer: Buffer; originalname: string }>
+): Promise<void> {
+    jobStore.updateJob(jobId, { status: 'extracting' })
+    const allPages: IGuidePage[] = []
+    const sources: IGuideSource[] = []
+    let pageOffset = 0
+
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i]
+            let pages: IGuidePage[]
+            try {
+                pages = await extractGuidePages(file.buffer, file.originalname)
+            } catch (err) {
+                const msg = err instanceof CustomError ? err.message : `Failed to extract ${file.originalname}`
+                jobStore.updateJob(jobId, { status: 'failed', error: { message: msg, filename: file.originalname } })
+                return
+            }
+            const renumbered = pages.map((p) => ({ ...p, pageNumber: p.pageNumber + pageOffset }))
+            pageOffset += pages.length
+            allPages.push(...renumbered)
+            sources.push({ filename: file.originalname, pageCount: pages.length })
+            jobStore.updateJob(jobId, { progress: { done: i + 1, total: files.length } })
+        }
+
+        if (allPages.length === 0) {
+            jobStore.updateJob(jobId, { status: 'failed', error: { message: 'No readable text found in guide PDFs.' } })
+            return
+        }
+
+        if (allPages.length > 1200) {
+            jobStore.updateJob(jobId, { status: 'failed', error: { message: `Guide too large: ${allPages.length} pages, max 1200.` } })
+            return
+        }
+
+        await testRepository.saveGuidePages(testId, userId, allPages, sources)
+        jobStore.updateJob(jobId, { status: 'succeeded', result: { pageCount: allPages.length, sources } })
+        logger.info('Guide extraction complete', { meta: { testId, pages: allPages.length } })
+    } catch {
+        jobStore.updateJob(jobId, { status: 'failed', error: { message: 'Extraction failed unexpectedly.' } })
+    }
+}
+
+export const getGuideJobStatus = (testId: string, jobId: string, userId: string): Promise<IGuideJob | null> => {
+    const job = jobStore.getJob(jobId)
+    if (!job || job.testId !== testId || job.ownerId !== userId) return Promise.resolve(null)
+    return Promise.resolve(job)
+}
+
+// ── Existing exports (unchanged) ──────────────────────────────────────────────
+
+export const listTests = async (userId: string): Promise<ITestWithCount[]> => testRepository.listWithCounts(userId)
 
 export const getTestResults = async (testId: string, userId: string): Promise<ITestResults> => {
     const results = await testRepository.getResults(testId, userId)
