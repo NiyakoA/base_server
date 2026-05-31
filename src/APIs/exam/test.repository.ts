@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
 import TestModel from './test.model'
 import ExamRecord from './exam.model'
-import { ITest, ITestWithCount, ITestResults, ITestStats, IExamRecord } from './types/exam.interface'
+import { ITest, ITestWithCount, ITestResults, ITestStats, IExamRecord, IGuidePage, IGuideSource } from './types/exam.interface'
 
 const testRepository = {
     create: async (name: string, userId: string): Promise<ITest> => {
@@ -45,6 +45,20 @@ const testRepository = {
     getAnswerKey: async (id: string, userId: string): Promise<Buffer | null> => {
         const doc = await TestModel.findOne({ _id: id, userId }).select('answerKey').lean()
         return doc?.answerKey ?? null
+    },
+
+    // Atomic swap: set guidedBook mode + pages in one write, clear answerKey
+    saveGuidePages: async (id: string, userId: string, pages: IGuidePage[], sources: IGuideSource[]): Promise<void> => {
+        await TestModel.updateOne(
+            { _id: id, userId },
+            { $set: { gradingMode: 'guidedBook', guidePages: pages, guideSources: sources }, $unset: { answerKey: '' } }
+        )
+    },
+
+    getGuidePages: async (id: string, userId: string): Promise<{ pages: IGuidePage[]; gradingMode: string } | null> => {
+        const doc = await TestModel.findOne({ _id: id, userId }).select('guidePages gradingMode').lean()
+        if (!doc) return null
+        return { pages: (doc.guidePages ?? []) as IGuidePage[], gradingMode: doc.gradingMode ?? 'answerKey' }
     },
 
     getResults: async (testId: string, userId: string): Promise<ITestResults | null> => {
