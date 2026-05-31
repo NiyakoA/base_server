@@ -1,3 +1,5 @@
+import type { GuideJobPoll } from '@/types/exam'
+
 export interface BackendResponse<T> {
     success: boolean
     statusCode: number
@@ -51,6 +53,6 @@ export async function uploadGuides(testId: string, files: File[]): Promise<Backe
     return apiUpload<{ jobId: string }>(`/v1/exam/tests/${testId}/guides`, form)
 }
 
-export async function pollGuideJob(testId: string, jobId: string): Promise<BackendResponse<import('@/types/exam').GuideJobPoll>> {
+export async function pollGuideJob(testId: string, jobId: string): Promise<BackendResponse<GuideJobPoll>> {
     return apiFetch(`/v1/exam/tests/${testId}/guides/job/${jobId}`)
 }
