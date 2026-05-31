@@ -1,7 +1,11 @@
 // src/__tests__/services/guideJobs.test.ts
-import { createJob, getJob, updateJob, getActiveJobForTest } from '../../services/guideJobs'
+import { createJob, getJob, updateJob, getActiveJobForTest, clearStore } from '../../services/guideJobs'
 
 describe('guideJobs', () => {
+    beforeEach(() => {
+        clearStore()
+    })
+
     it('creates a job in queued state', () => {
         const job = createJob('test1', 'user1', 3)
         expect(job.status).toBe('queued')

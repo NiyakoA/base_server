@@ -21,7 +21,7 @@ setInterval(
         }
     },
     10 * 60 * 1000
-)
+).unref()
 
 export function createJob(testId: string, ownerId: string, totalFiles: number): IGuideJob {
     const job: IGuideJob = {
@@ -54,4 +54,8 @@ export function getActiveJobForTest(testId: string): IGuideJob | undefined {
         }
     }
     return undefined
+}
+
+export function clearStore(): void {
+    store.clear()
 }
