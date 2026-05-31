@@ -1,3 +1,4 @@
+// src/APIs/exam/exam.controller.ts
 import { NextFunction, Request, Response } from 'express'
 import httpResponse from '../../handlers/httpResponse'
 import httpError from '../../handlers/errorHandler/httpError'
@@ -5,7 +6,7 @@ import asyncHandler from '../../handlers/async'
 import { CustomError } from '../../utils/errors'
 import { OcrMode } from '../../services/ocr'
 import { IAuthenticateRequest } from '../../types/types'
-import { gradeExamFiles, listTests, getTestResults, editExamRecord } from './exam.service'
+import { gradeExamFiles, listTests, getTestResults, editExamRecord, startGuideUpload, getGuideJobStatus } from './exam.service'
 
 export default {
     grade: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
@@ -14,9 +15,7 @@ export default {
             const answerKey = files?.['answerKey']?.[0]
             const studentPaper = files?.['studentPaper']?.[0]
 
-            if (!studentPaper) {
-                throw new CustomError('Student paper file is required.', 422)
-            }
+            if (!studentPaper) throw new CustomError('Student paper file is required.', 422)
 
             const userId = (request as IAuthenticateRequest).authenticatedUser._id.toString()
             const body = request.body as { mode?: OcrMode; studentName?: string; testId?: string; testName?: string }
@@ -30,14 +29,10 @@ export default {
                 body.testId,
                 body.testName
             )
-
             httpResponse(response, request, 200, 'Exam graded successfully', result)
         } catch (error) {
-            if (error instanceof CustomError) {
-                httpError(next, error, request, error.statusCode)
-            } else {
-                httpError(next, error, request, 500)
-            }
+            if (error instanceof CustomError) httpError(next, error, request, error.statusCode)
+            else httpError(next, error, request, 500)
         }
     }),
 
@@ -47,11 +42,8 @@ export default {
             const tests = await listTests(userId)
             httpResponse(response, request, 200, 'Tests retrieved successfully', tests)
         } catch (error) {
-            if (error instanceof CustomError) {
-                httpError(next, error, request, error.statusCode)
-            } else {
-                httpError(next, error, request, 500)
-            }
+            if (error instanceof CustomError) httpError(next, error, request, error.statusCode)
+            else httpError(next, error, request, 500)
         }
     }),
 
@@ -62,11 +54,8 @@ export default {
             const results = await getTestResults(testId, userId)
             httpResponse(response, request, 200, 'Test results retrieved successfully', results)
         } catch (error) {
-            if (error instanceof CustomError) {
-                httpError(next, error, request, error.statusCode)
-            } else {
-                httpError(next, error, request, 500)
-            }
+            if (error instanceof CustomError) httpError(next, error, request, error.statusCode)
+            else httpError(next, error, request, 500)
         }
     }),
 
@@ -78,11 +67,44 @@ export default {
             const record = await editExamRecord(recordId, questions, userId)
             httpResponse(response, request, 200, 'Record updated successfully', record)
         } catch (error) {
-            if (error instanceof CustomError) {
-                httpError(next, error, request, error.statusCode)
-            } else {
-                httpError(next, error, request, 500)
+            if (error instanceof CustomError) httpError(next, error, request, error.statusCode)
+            else httpError(next, error, request, 500)
+        }
+    }),
+
+    uploadGuide: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
+        try {
+            const userId = (request as IAuthenticateRequest).authenticatedUser._id.toString()
+            const { testId } = request.params
+            const files = (request.files as Express.Multer.File[]) ?? []
+            if (files.length === 0) throw new CustomError('At least one PDF file is required.', 422)
+
+            const result = await startGuideUpload(
+                testId,
+                userId,
+                files.map((f) => ({ buffer: f.buffer, originalname: f.originalname }))
+            )
+            httpResponse(response, request, 202, 'Guide extraction started', result)
+        } catch (error) {
+            if (error instanceof CustomError) httpError(next, error, request, error.statusCode)
+            else httpError(next, error, request, 500)
+        }
+    }),
+
+    pollGuideJob: asyncHandler(async (request: Request, response: Response, next: NextFunction) => {
+        try {
+            const userId = (request as IAuthenticateRequest).authenticatedUser._id.toString()
+            const { testId, jobId } = request.params
+            const job = await getGuideJobStatus(testId, jobId, userId)
+            if (!job) {
+                httpError(next, new CustomError('Job not found or expired', 404), request, 404)
+                return
             }
+            const { status, progress, result, error } = job
+            httpResponse(response, request, 200, 'Job status retrieved', { status, progress, result, error })
+        } catch (error) {
+            if (error instanceof CustomError) httpError(next, error, request, error.statusCode)
+            else httpError(next, error, request, 500)
         }
     })
 }

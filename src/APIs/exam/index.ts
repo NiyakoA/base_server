@@ -1,6 +1,8 @@
+// src/APIs/exam/index.ts
 import { Router } from 'express'
 import examController from './exam.controller'
 import upload from '../../middlewares/upload'
+import guideUpload from '../../middlewares/guideUpload'
 import rateLimiter from '../../middlewares/rateLimiter'
 import authenticate from '../../middlewares/authenticate'
 
@@ -19,6 +21,10 @@ router.route('/exam/grade').post(
 router.route('/exam/tests').get(rateLimiter, authenticate, examController.tests)
 
 router.route('/exam/tests/:testId/results').get(rateLimiter, authenticate, examController.testResults)
+
+router.route('/exam/tests/:testId/guides').post(rateLimiter, authenticate, guideUpload.array('guides', 10), examController.uploadGuide)
+
+router.route('/exam/tests/:testId/guides/job/:jobId').get(rateLimiter, authenticate, examController.pollGuideJob)
 
 router.route('/exam/records/:recordId').patch(rateLimiter, authenticate, examController.editRecord)
 
