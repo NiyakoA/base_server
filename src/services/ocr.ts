@@ -41,12 +41,9 @@ export const extractText = async (
         throw new CustomError('OCR service unavailable', 503)
     }
 
-    if (response.status === 422) {
-        throw new CustomError('No image provided', 422)
-    }
-
     if (!response.ok) {
-        throw new CustomError('Extraction failed', 500)
+        const body = (await response.json().catch(() => ({}))) as { error?: string }
+        throw new CustomError(body.error ?? `OCR service error (${response.status})`, response.status === 422 ? 422 : 500)
     }
 
     const data = (await response.json()) as {

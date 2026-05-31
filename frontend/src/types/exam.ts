@@ -7,6 +7,7 @@ export interface ExamQuestion {
 }
 
 export interface GradeResult {
+    testId: string
     totalScore: number
     maxScore: number
     percentage: number
@@ -17,6 +18,7 @@ export interface TestItem {
     _id: string
     name: string
     studentCount: number
+    hasAnswerKey: boolean
     createdAt?: string
 }
 

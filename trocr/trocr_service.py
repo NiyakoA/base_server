@@ -25,28 +25,16 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
-ANSWER_CHECK_PROMPT = (
-    'Look at this student exam paper image.\n'
-    'I need a single YES or NO answer to this question:\n'
-    'Did the student physically write or mark ANYTHING by hand on this paper?\n\n'
-    'Count as YES:\n'
-    '- Any letter, word, or number written in pen or pencil\n'
-    '- Any circled, bubbled, checked, or crossed answer choice\n'
-    '- Any mark, scribble, or erasure made by hand\n\n'
-    'Count as NO:\n'
-    '- Only pre-printed question text with no student marks whatsoever\n\n'
-    'Reply with ONLY the single word YES or NO. Nothing else.'
-)
-
 HANDWRITING_PROMPT = (
     'You are scanning a student exam paper to extract their answers. '
-    'Your job is to find and return ONLY what the student filled in or wrote — nothing else.\n\n'
+    'Scan the ENTIRE image from top to bottom — every question, every line. Do not stop early.\n\n'
     'Look for TWO types of student answers:\n'
     '1. SELECTED CHOICES — letters or options the student circled, filled, bubbled, checked, or crossed (e.g. "A", "B", "True", "Yes")\n'
     '2. WRITTEN RESPONSES — words, sentences, or numbers the student handwrote in answer spaces\n\n'
     'Rules:\n'
-    '- Ignore ALL pre-printed text: question text, instructions, labels, answer choices that are NOT selected\n'
-    '- If a question has nothing circled and nothing written, output nothing for it\n'
+    '- Cover every question from first to last — do not skip any section of the page\n'
+    '- Ignore pre-printed question text, instructions, and un-marked answer choices\n'
+    '- If a question has nothing circled and nothing written, skip it\n'
     '- Preserve question numbers where visible (e.g. "1. A", "2. photosynthesis")\n'
     '- Output ONLY the extracted answers with no commentary or explanation'
 )
@@ -139,14 +127,6 @@ def ocr_printed(pil_image: Image.Image, student_paper: bool = False) -> tuple[st
     if is_blank(pil_image):
         return '', 0
 
-    # Tesseract reads ALL text including pre-printed questions.
-    # Only gate on student marks for the student paper — answer keys are
-    # fully printed and would fail this check.
-    if student_paper and gemini_client:
-        img_bytes = _prepare_image_bytes(pil_image)
-        if not _student_wrote_anything(img_bytes):
-            return '', 0
-
     pre = preprocess(pil_image)
     # PSM 3 (auto) is more robust than PSM 4 for exam pages with varying layouts.
     text = pytesseract.image_to_string(pre, config='--psm 3').strip()
@@ -166,9 +146,7 @@ def ocr_printed(pil_image: Image.Image, student_paper: bool = False) -> tuple[st
     return text, confidence
 
 
-# Gemini vision handles images best up to this dimension on each side.
-# Larger images are silently downsampled, which can cause the bottom of a
-# tall exam page to become blurry and unreadable.
+# Each tile is resized to fit within this dimension before being sent to Gemini.
 GEMINI_MAX_DIM = 2048
 
 def _prepare_image_bytes(pil_image: Image.Image) -> bytes:
@@ -181,17 +159,95 @@ def _prepare_image_bytes(pil_image: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def _student_wrote_anything(img_bytes: bytes) -> bool:
-    """Two-pass blank check: ask Gemini a simple YES/NO before full extraction."""
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[
-            genai_types.Part.from_text(text=ANSWER_CHECK_PROMPT),
-            genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
-        ],
-    )
-    return response.text.strip().upper().startswith('YES')
+_TRANSIENT_SIGNALS = ('UNAVAILABLE', 'RESOURCE_EXHAUSTED', '429', '503')
+_MAX_RETRIES = 3
 
+
+def _gemini_call(contents: list) -> object:
+    """Call Gemini with exponential backoff on transient 503/429 errors."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return gemini_client.models.generate_content(model=GEMINI_MODEL, contents=contents)
+        except Exception as e:
+            err_str = str(e)
+            is_transient = any(sig in err_str for sig in _TRANSIENT_SIGNALS)
+            if is_transient and attempt < _MAX_RETRIES - 1:
+                time.sleep(2 ** attempt)  # 1s, 2s — fail fast, not slow
+                continue
+            raise
+
+
+_STUDENT_WROTE_PROMPT = (
+    'Look at this student exam paper image.\n'
+    'Did the student physically write or mark ANYTHING by hand — circled answers, filled bubbles, written words, any pen/pencil marks?\n'
+    'Reply with ONLY the single word YES or NO.'
+)
+
+def _student_wrote_anything(img_bytes: bytes) -> bool:
+    """Ask Gemini whether the student made any marks — used by printed mode to
+    avoid Tesseract reading pre-printed text on a blank paper as answers.
+    Fails open (returns True) when quota is exceeded so grading still works."""
+    try:
+        response = _gemini_call([
+            genai_types.Part.from_text(text=_STUDENT_WROTE_PROMPT),
+            genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
+        ])
+        return response.text.strip().upper().startswith('YES')
+    except Exception:
+        return True  # quota/error: assume marks present, let Tesseract run
+
+
+def _gemini_extract(img_bytes: bytes) -> str:
+    """Send one image crop to Gemini and return postprocessed extracted text."""
+    response = _gemini_call([
+        genai_types.Part.from_text(text=HANDWRITING_PROMPT),
+        genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
+    ])
+    return postprocess(response.text)
+
+
+_Q_NUM = re.compile(r'^\s*(\d+)\s*[.:\)]\s*', re.MULTILINE)
+
+def _merge_tile_texts(top: str, bot: str) -> str:
+    """Merge two tile extraction results without duplicating the overlap zone.
+
+    Strategy: keep all of the top tile's output, then from the bottom tile only
+    include lines that belong to questions numbered higher than the last question
+    seen in the top tile.  This avoids per-line fuzzy matching entirely.
+    """
+    top_lines = [l.strip() for l in top.splitlines() if l.strip()]
+    bot_lines = [l.strip() for l in bot.splitlines() if l.strip()]
+
+    top_nums = [int(m.group(1)) for l in top_lines if (m := _Q_NUM.match(l))]
+
+    if not top_nums:
+        # No numbered questions — fall back to exact-line dedup
+        seen = set(top_lines)
+        extra = [l for l in bot_lines if l not in seen]
+        return '\n'.join(top_lines + extra)
+
+    cutoff = max(top_nums)
+
+    # Take only lines from the bottom tile that start at a question > cutoff,
+    # plus any continuation lines (non-numbered) that follow.
+    bot_keep: list[str] = []
+    taking = False
+    for line in bot_lines:
+        m = _Q_NUM.match(line)
+        if m and int(m.group(1)) > cutoff:
+            taking = True
+        if taking:
+            bot_keep.append(line)
+
+    return '\n'.join(top_lines + bot_keep)
+
+
+_TILED_PROMPT = (
+    HANDWRITING_PROMPT +
+    '\n\nThis exam paper is shown as two overlapping image halves (top half first, bottom half second). '
+    'Treat them as one continuous page from top to bottom. '
+    'Use the question numbers printed on the paper — do not re-number.'
+)
 
 def ocr_handwritten(pil_image: Image.Image, student_paper: bool = False) -> tuple[str, int]:
     if not gemini_client:
@@ -200,20 +256,22 @@ def ocr_handwritten(pil_image: Image.Image, student_paper: bool = False) -> tupl
     if is_blank(pil_image):
         return '', 0
 
-    img_bytes = _prepare_image_bytes(pil_image)
+    w, h = pil_image.size
+    if h > w:
+        # Portrait page: send both halves in one Gemini call so it sees the full
+        # context and never re-numbers or misses answers in either half.
+        mid = h // 2
+        overlap = h // 8
+        top_tile = pil_image.crop((0, 0, w, mid + overlap))
+        bot_tile = pil_image.crop((0, mid - overlap, w, h))
+        response = _gemini_call([
+            genai_types.Part.from_text(text=_TILED_PROMPT),
+            genai_types.Part.from_bytes(data=_prepare_image_bytes(top_tile), mime_type='image/jpeg'),
+            genai_types.Part.from_bytes(data=_prepare_image_bytes(bot_tile), mime_type='image/jpeg'),
+        ])
+        return postprocess(response.text), 95
 
-    # Gate: only check for student marks on the student paper, not the answer key.
-    if student_paper and not _student_wrote_anything(img_bytes):
-        return '', 0
-
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=[
-            genai_types.Part.from_text(text=HANDWRITING_PROMPT),
-            genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
-        ],
-    )
-    return postprocess(response.text), 95
+    return _gemini_extract(_prepare_image_bytes(pil_image)), 95
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -256,6 +314,15 @@ def extract():
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
     except Exception as e:
+        err_str = str(e)
+        if 'UNAVAILABLE' in err_str or ('503' in err_str and 'high demand' in err_str):
+            return jsonify({'error': 'Gemini is temporarily overloaded — please try again in a moment'}), 503
+        if 'RESOURCE_EXHAUSTED' in err_str or '429' in err_str:
+            return jsonify({'error': 'Gemini API quota exceeded — try again later or switch to printed mode'}), 503
+        if 'PERMISSION_DENIED' in err_str or '403' in err_str or 'not allowed' in err_str.lower():
+            return jsonify({'error': 'Gemini API key is invalid or lacks permission — check GEMINI_API_KEY in .env'}), 503
+        if 'API_KEY_INVALID' in err_str or 'invalid api key' in err_str.lower():
+            return jsonify({'error': 'Gemini API key is invalid — check GEMINI_API_KEY in .env'}), 503
         return jsonify({'error': f'Processing failed: {e}'}), 500
 
 

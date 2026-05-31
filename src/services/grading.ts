@@ -18,7 +18,7 @@ const getAI = (): InstanceType<typeof GoogleGenAI> => {
     return _ai
 }
 
-const buildPrompt = (answerKeyText: string, studentPaperText: string): string =>
+const buildPrompt = (answerKeyText: string, studentPaperText: string, mode: 'printed' | 'handwritten'): string =>
     `
 You are an exam grader. You will be given an answer key and a student's exam paper.
 
@@ -30,8 +30,8 @@ ${studentPaperText}
 
 Instructions:
 - Include EVERY question from the answer key — do not skip any.
-- For each question, copy the student's HANDWRITTEN answer verbatim. If the student left a question blank, wrote nothing, or the paper was blank, use an empty string "" for studentAnswer and mark it "wrong".
-- Do NOT infer, guess, or fabricate answers. Only use text actually written by the student.
+- For each question, copy the student's answer verbatim. If the student left a question blank, wrote nothing, or the paper was blank, use an empty string "" for studentAnswer and mark it "wrong".
+- Do NOT infer, guess, or fabricate answers. Only use text actually written or marked by the student.${mode === 'printed' ? '\n- IMPORTANT: The student paper text was extracted by OCR from a printed exam sheet, so it includes pre-printed question text and answer choices. Only treat text as a student answer if it is a clearly marked choice (circled letter, filled bubble) or a written response — not just pre-printed options. If you cannot identify any student-marked answers, mark every question wrong with empty studentAnswer.' : ''}
 - Assign a score: "correct", "partial", or "wrong".
 - Write a one-sentence feedback explaining any mistake (use empty string "" if correct).
 - totalScore: correct=1, partial=0.5, wrong=0. maxScore = total number of questions.
@@ -52,7 +52,11 @@ Respond with ONLY valid JSON — no markdown, no explanation:
 }
 `.trim()
 
-export const gradeExam = async (answerKeyText: string, studentPaperText: string): Promise<IGradingResult> => {
+export const gradeExam = async (
+    answerKeyText: string,
+    studentPaperText: string,
+    mode: 'printed' | 'handwritten' = 'printed'
+): Promise<IGradingResult> => {
     if (!answerKeyText.trim()) {
         throw new CustomError('Answer key text is empty — OCR may have failed.', 422)
     }
@@ -66,7 +70,7 @@ export const gradeExam = async (answerKeyText: string, studentPaperText: string)
     try {
         const response = await getAI().models.generateContent({
             model: GEMINI_MODEL,
-            contents: buildPrompt(answerKeyText, resolvedStudentText)
+            contents: buildPrompt(answerKeyText, resolvedStudentText, mode)
         })
         raw = response.text ?? ''
     } catch {
