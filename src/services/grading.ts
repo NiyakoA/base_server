@@ -2,21 +2,92 @@
 import { CustomError } from '../utils/errors'
 import { IExamQuestion, IGradingResult } from '../APIs/exam/types/exam.interface'
 
-// require() bypasses ts-jest's __importDefault wrapping for both logger and genai
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const logger = (require('../handlers/logger') as { default: typeof import('../handlers/logger').default }).default
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { GoogleGenAI } = require('@google/genai') as typeof import('@google/genai')
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'models/gemini-flash-lite-latest'
+const TRANSIENT_SIGNALS = ['RESOURCE_EXHAUSTED', 'UNAVAILABLE', '429', '503']
 
-// Lazy singleton — defer construction until first call so Jest mock factories
-// are fully initialised before the GoogleGenAI constructor runs.
 let _ai: InstanceType<typeof GoogleGenAI> | null = null
-const getAI = (): InstanceType<typeof GoogleGenAI> => {
+export const getAI = (): InstanceType<typeof GoogleGenAI> => {
     if (!_ai) _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' })
     return _ai
 }
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+export const hardenGradingJson = (raw: string): IGradingResult => {
+    const cleaned = raw
+        .replace(/^```(?:json)?\n?/i, '')
+        .replace(/\n?```$/i, '')
+        .trim()
+
+    let parsed: IGradingResult
+    try {
+        parsed = JSON.parse(cleaned) as IGradingResult
+    } catch {
+        logger.error('Gemini returned unparseable grading response', { meta: { raw } })
+        throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
+    }
+
+    if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
+        logger.error('Gemini returned structurally invalid grading response', { meta: { raw } })
+        throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
+    }
+
+    const VALID_SCORES = new Set<IExamQuestion['score']>(['correct', 'partial', 'wrong'])
+    const questions: IExamQuestion[] = parsed.questions.map((q, i) => {
+        const r = q as unknown as Record<string, unknown>
+        const rawScore = String(r.score ?? '')
+        return {
+            number: typeof r.number === 'number' ? r.number : i + 1,
+            correctAnswer: String(r.correctAnswer ?? r.correct_answer ?? ''),
+            studentAnswer: String(r.studentAnswer ?? r.student_answer ?? ''),
+            score: (VALID_SCORES.has(rawScore as IExamQuestion['score']) ? rawScore : 'wrong') as IExamQuestion['score'],
+            feedback: String(r.feedback ?? '')
+        }
+    })
+
+    const scoreMap: Record<string, number> = { correct: 1, partial: 0.5, wrong: 0 }
+    const totalScore = questions.reduce((sum, q) => sum + (scoreMap[q.score] ?? 0), 0)
+    const maxScore = questions.length
+    return { ...parsed, totalScore, maxScore, questions }
+}
+
+export const parseKeywordMap = (raw: string): Record<string, string[]> => {
+    const cleaned = raw
+        .replace(/^```(?:json)?\n?/i, '')
+        .replace(/\n?```$/i, '')
+        .trim()
+    try {
+        const parsed = JSON.parse(cleaned) as Record<string, string[]>
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+        return parsed
+    } catch {
+        return {}
+    }
+}
+
+export const callGeminiWithBackoff = async (prompt: string): Promise<string> => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const response = await getAI().models.generateContent({ model: GEMINI_MODEL, contents: prompt })
+            return response.text ?? ''
+        } catch (e) {
+            const msg = String(e)
+            if (TRANSIENT_SIGNALS.some((s) => msg.includes(s)) && attempt < 2) {
+                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+                continue
+            }
+            throw new CustomError('Grading service unavailable.', 503)
+        }
+    }
+    throw new CustomError('Grading service unavailable.', 503)
+}
+
+// ── Answer-key grading (unchanged signature) ──────────────────────────────────
 
 const buildPrompt = (answerKeyText: string, studentPaperText: string, mode: 'printed' | 'handwritten'): string =>
     `
@@ -61,65 +132,17 @@ export const gradeExam = async (
         throw new CustomError('Answer key text is empty — OCR may have failed.', 422)
     }
 
-    // Blank student paper: still grade it — every question gets wrong/empty so score is 0.
     const resolvedStudentText = studentPaperText.trim()
         ? studentPaperText
         : '[BLANK PAPER — student submitted no handwritten answers. Mark every question wrong with empty studentAnswer.]'
 
-    let raw: string
-    try {
-        const response = await getAI().models.generateContent({
-            model: GEMINI_MODEL,
-            contents: buildPrompt(answerKeyText, resolvedStudentText, mode)
-        })
-        raw = response.text ?? ''
-    } catch {
-        throw new CustomError('Grading service unavailable.', 503)
-    }
+    const raw = await callGeminiWithBackoff(buildPrompt(answerKeyText, resolvedStudentText, mode))
 
     if (!raw.trim()) {
         throw new CustomError('Grading service returned an empty response.', 503)
     }
 
-    // Strip markdown code fences Gemini sometimes adds
-    const cleaned = raw
-        .replace(/^```(?:json)?\n?/i, '')
-        .replace(/\n?```$/i, '')
-        .trim()
-
-    let parsed: IGradingResult
-    try {
-        parsed = JSON.parse(cleaned) as IGradingResult
-    } catch {
-        logger.error('Gemini returned unparseable grading response', { meta: { raw } })
-        throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
-    }
-
-    if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
-        logger.error('Gemini returned structurally invalid grading response', { meta: { raw } })
-        throw new CustomError('Could not identify question structure — ensure the exam is clearly formatted.', 422)
-    }
-
-    // Normalise each question so Mongoose enum/required constraints are always satisfied
-    const VALID_SCORES = new Set<IExamQuestion['score']>(['correct', 'partial', 'wrong'])
-    const questions: IExamQuestion[] = parsed.questions.map((raw, i) => {
-        const q = raw as unknown as Record<string, unknown>
-        const rawScore = String(q.score ?? '')
-        return {
-            number: typeof q.number === 'number' ? q.number : i + 1,
-            correctAnswer: String(q.correctAnswer ?? q.correct_answer ?? ''),
-            studentAnswer: String(q.studentAnswer ?? q.student_answer ?? ''),
-            score: (VALID_SCORES.has(rawScore as IExamQuestion['score']) ? rawScore : 'wrong') as IExamQuestion['score'],
-            feedback: String(q.feedback ?? '')
-        }
-    })
-
-    // Recompute from individual question scores so the badge always matches the cards
-    const scoreMap: Record<string, number> = { correct: 1, partial: 0.5, wrong: 0 }
-    const totalScore = questions.reduce((sum, q) => sum + (scoreMap[q.score] ?? 0), 0)
-    const maxScore = questions.length
-
-    logger.info('Exam graded', { meta: { totalScore, maxScore, questions: maxScore } })
-
-    return { ...parsed, totalScore, maxScore, questions }
+    const result = hardenGradingJson(raw)
+    logger.info('Exam graded', { meta: { totalScore: result.totalScore, maxScore: result.maxScore, questions: result.maxScore } })
+    return result
 }
