@@ -256,12 +256,21 @@ export function trimToContextBudget(qPages: QPages[], budget = CONTEXT_BUDGET_CH
     return qPages
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Strip student answer (after →) from a segment — used for keyword extraction
+// and correct-answer lookup so student responses never influence either.
+function questionOnly(segText: string): string {
+    const idx = segText.indexOf('→')
+    return idx === -1 ? segText : segText.slice(0, idx).trim()
+}
+
 // ── Gemini keyword fallback ───────────────────────────────────────────────────
 async function geminiKeywordFallback(segments: Array<{ qNum: number; text: string }>): Promise<Record<string, string[]>> {
     const prompt = `Extract important keywords for finding relevant textbook pages for each question.
 Return ONLY valid JSON: {"1":["keyword1","keyword2"],"2":["keyword3"]}
 
-${segments.map((s) => `Question ${s.qNum}: ${s.text}`).join('\n')}`.trim()
+${segments.map((s) => `Question ${s.qNum}: ${questionOnly(s.text)}`).join('\n')}`.trim()
     try {
         const raw = await callGeminiWithBackoff(prompt)
         return parseKeywordMap(raw)
@@ -271,8 +280,82 @@ ${segments.map((s) => `Question ${s.qNum}: ${s.text}`).join('\n')}`.trim()
     }
 }
 
-// ── Grading prompt ────────────────────────────────────────────────────────────
-function buildGuidedPrompt(studentPaperText: string, refByQ: Map<number, IGuidePage[]>, mode: 'printed' | 'handwritten'): string {
+// ── Pass 1: extract correct answers from guide (no student paper in context) ──
+async function extractCorrectAnswersFromGuide(
+    segments: Array<{ qNum: number; text: string }>,
+    refByQ: Map<number, IGuidePage[]>
+): Promise<Map<number, string>> {
+    const questionLines = segments.map((s) => `Q${s.qNum}: ${questionOnly(s.text).replace(/^\d+\s*[.:)]\s*/, '')}`).join('\n')
+
+    const refBlocks = [...refByQ.entries()]
+        .map(([qNum, pages]) =>
+            pages.length > 0
+                ? `REFERENCE FOR Q${qNum}:\n${pages.map((p) => `[${p.source} p.${p.pageNumber}]\n${p.text}`).join('\n\n')}`
+                : `REFERENCE FOR Q${qNum}: [no pages found — use general knowledge]`
+        )
+        .join('\n\n---\n\n')
+
+    const prompt = `You are reading a study guide. Using the reference pages, determine the correct answer for each question.
+Do NOT guess based on the question wording — derive the answer from the guide content.
+
+QUESTIONS:
+${questionLines}
+
+${refBlocks}
+
+Return ONLY valid JSON — no markdown:
+{"1":"answer","2":"answer",...}
+For questions with no relevant reference, use general knowledge and append " (unverified)".`.trim()
+
+    try {
+        const raw = await callGeminiWithBackoff(prompt)
+        const cleaned = raw
+            .replace(/^```(?:json)?\n?/i, '')
+            .replace(/\n?```$/i, '')
+            .trim()
+        const parsed = JSON.parse(cleaned) as Record<string, string>
+        const result = new Map<number, string>()
+        for (const [k, v] of Object.entries(parsed)) {
+            const n = parseInt(k, 10)
+            if (!isNaN(n)) result.set(n, String(v))
+        }
+        return result
+    } catch {
+        logger.warn?.('Could not extract correct answers from guide — will fall back to single-pass', {})
+        return new Map()
+    }
+}
+
+// ── Pass 2: grade student answers against pre-extracted correct answers ────────
+function buildGradingWithAnswersPrompt(studentPaperText: string, correctAnswers: Map<number, string>): string {
+    const answerLines = [...correctAnswers.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([qNum, answer]) => `Q${qNum}: ${answer}`)
+        .join('\n')
+
+    return `You are an exam grader.
+
+CORRECT ANSWERS (derived from the study guide — do not change these):
+${answerLines}
+
+STUDENT PAPER:
+${studentPaperText}
+
+Instructions:
+- Grade EVERY numbered question in the student paper.
+- The student paper format is "[number]. [question text] → [student's answer]". The part after → is the student's answer.
+- "(blank)" means unanswered — mark wrong with empty studentAnswer.
+- Copy the student's answer verbatim from after the →.
+- Use the correctAnswer EXACTLY as listed above — never alter it regardless of what the student wrote.
+- Assign score: "correct", "partial", or "wrong". correct=1, partial=0.5, wrong=0.
+- One-sentence feedback for mistakes; "" if correct.
+
+Respond with ONLY valid JSON — no markdown:
+{"totalScore":number,"maxScore":number,"questions":[{"number":number,"correctAnswer":string,"studentAnswer":string,"score":"correct"|"partial"|"wrong","feedback":string}]}`.trim()
+}
+
+// ── Fallback single-pass prompt (used if Pass 1 fails) ────────────────────────
+function buildGuidedPrompt(studentPaperText: string, refByQ: Map<number, IGuidePage[]>): string {
     const refBlocks = [...refByQ.entries()]
         .map(([qNum, pages]) => {
             const pagesText =
@@ -293,21 +376,18 @@ ${refBlocks}
 Instructions:
 - Cover EVERY numbered question in the student paper — do not skip any.
 - For each question, use the REFERENCE PAGES with the matching question number to establish the correct answer.
+- The correctAnswer must come solely from the reference pages — never from what the student wrote.
 - Copy the student's answer verbatim. If blank or missing, use "" and mark wrong.
-- Do NOT fabricate answers. If no reference pages for a question, grade on general knowledge and add "answer unverified against guide" in feedback.
 - Assign score: "correct", "partial", or "wrong". correct=1, partial=0.5, wrong=0.
-- One-sentence feedback for mistakes; "" if correct.${mode === 'printed' ? '\n- IMPORTANT: Student paper was OCR-extracted from a printed sheet — only treat clearly marked or written text as student answers.' : ''}
+- One-sentence feedback for mistakes; "" if correct.
+- The student paper uses the format "[number]. [question text] → [marked answer]". The part after → is the student's answer. "(blank)" means unanswered — mark wrong with empty studentAnswer.
 
 Respond with ONLY valid JSON — no markdown, no explanation:
 {"totalScore":number,"maxScore":number,"questions":[{"number":number,"correctAnswer":string,"studentAnswer":string,"score":"correct"|"partial"|"wrong","feedback":string}]}`
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export const gradeExamGuided = async (
-    guidePages: IGuidePage[],
-    studentPaperText: string,
-    mode: 'printed' | 'handwritten' = 'printed'
-): Promise<IGradingResult> => {
+export const gradeExamGuided = async (guidePages: IGuidePage[], studentPaperText: string): Promise<IGradingResult> => {
     if (guidePages.length === 0) throw new CustomError('No guide pages available for this test.', 422)
 
     const resolvedText = studentPaperText.trim() ? studentPaperText : '[BLANK PAPER — mark every question wrong with empty studentAnswer.]'
@@ -321,7 +401,9 @@ export const gradeExamGuided = async (
     const fallbackNeeded: typeof segments = []
 
     for (const seg of segments) {
-        const keywords = extractLocalKeywords(seg.text)
+        // Use only the question text (before →) for keyword extraction so that
+        // different student answers never affect which guide pages are selected.
+        const keywords = extractLocalKeywords(questionOnly(seg.text))
         if (keywords.length < MIN_KEYWORDS) {
             fallbackNeeded.push(seg)
             qPages.push({ qNum: seg.qNum, pages: [], scores: [] })
@@ -351,9 +433,17 @@ export const gradeExamGuided = async (
     trimToContextBudget(qPages)
 
     const refByQ = new Map(qPages.map((q) => [q.qNum, q.pages]))
-    const prompt = buildGuidedPrompt(resolvedText, refByQ, mode)
 
-    const raw = await callGeminiWithBackoff(prompt)
+    // Pass 1: extract correct answers from guide only — student paper not shown,
+    // so correct answers are always derived from the guide and never contaminated
+    // by what any individual student happened to write.
+    const correctAnswers = await extractCorrectAnswersFromGuide(segments, refByQ)
+
+    const raw =
+        correctAnswers.size > 0
+            ? await callGeminiWithBackoff(buildGradingWithAnswersPrompt(resolvedText, correctAnswers))
+            : await callGeminiWithBackoff(buildGuidedPrompt(resolvedText, refByQ))
+
     if (!raw.trim()) throw new CustomError('Grading service returned an empty response.', 503)
 
     const result = hardenGradingJson(raw)

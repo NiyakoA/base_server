@@ -93,6 +93,27 @@ export const extractGuidePages = async (pdfBuffer: Buffer, filename: string): Pr
     return data.pages
 }
 
+export const detectStudentName = async (imageBuffer: Buffer): Promise<string | null> => {
+    const form = new FormData()
+    form.append('image', new Blob([imageBuffer]), 'image.bin')
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
+
+    let response: Response
+    try {
+        response = await fetch(`${TROCR_URL}/detect-name`, { method: 'POST', body: form, signal: controller.signal })
+    } catch {
+        return null
+    } finally {
+        clearTimeout(timer)
+    }
+
+    if (!response.ok) return null
+    const data = (await response.json().catch(() => ({}))) as { name?: string | null }
+    return data.name ?? null
+}
+
 export const extractBatch = async (
     files: Array<{ buffer: Buffer; originalname: string }>,
     mode: OcrMode = 'handwritten'

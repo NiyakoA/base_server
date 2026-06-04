@@ -28,6 +28,15 @@ const resolveTestId = async (
     throw new CustomError('Either testId or testName is required', 422)
 }
 
+export const previewStudentPaper = async (studentPaperBuffer: Buffer, mode: OcrMode): Promise<string> => {
+    try {
+        return (await extractText(studentPaperBuffer, mode, 'student_paper')).text
+    } catch (err) {
+        const msg = err instanceof CustomError ? err.message : 'OCR failed'
+        throw new CustomError(msg, 422)
+    }
+}
+
 export const gradeExamFiles = async (
     answerKeyBuffer: Buffer | null,
     studentPaperBuffer: Buffer,
@@ -35,7 +44,8 @@ export const gradeExamFiles = async (
     studentName: string,
     userId: string,
     testId?: string,
-    testName?: string
+    testName?: string,
+    previewedStudentText?: string
 ): Promise<IExamRecord & { testId: string }> => {
     if (!studentName?.trim()) throw new CustomError('Student name is required', 422)
 
@@ -52,15 +62,18 @@ export const gradeExamFiles = async (
         }
 
         let studentPaperText: string
-        try {
-            const paperResult = await extractText(studentPaperBuffer, mode, 'student_paper')
-            studentPaperText = paperResult.text
-        } catch (err) {
-            const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
-            throw new CustomError(`Student paper: ${msg}`, 422)
+        if (previewedStudentText !== undefined && previewedStudentText.trim()) {
+            studentPaperText = previewedStudentText
+        } else {
+            try {
+                studentPaperText = (await extractText(studentPaperBuffer, mode, 'student_paper')).text
+            } catch (err) {
+                const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
+                throw new CustomError(`Student paper: ${msg}`, 422)
+            }
         }
 
-        const grading = await gradeExamGuided(guideInfo.pages, studentPaperText, mode)
+        const grading = await gradeExamGuided(guideInfo.pages, studentPaperText)
         const percentage = grading.maxScore > 0 ? Math.round((grading.totalScore / grading.maxScore) * 100) : 0
 
         let record
@@ -106,14 +119,18 @@ export const gradeExamFiles = async (
         throw new CustomError(`Answer key: ${msg}`, 422)
     }
 
-    try {
-        studentPaperText = (await extractText(studentPaperBuffer, mode, 'student_paper')).text
-    } catch (err) {
-        const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
-        throw new CustomError(`Student paper: ${msg}`, 422)
+    if (previewedStudentText !== undefined && previewedStudentText.trim()) {
+        studentPaperText = previewedStudentText
+    } else {
+        try {
+            studentPaperText = (await extractText(studentPaperBuffer, mode, 'student_paper')).text
+        } catch (err) {
+            const msg = err instanceof CustomError ? err.message : 'Could not extract text from student paper.'
+            throw new CustomError(`Student paper: ${msg}`, 422)
+        }
     }
 
-    const grading = await gradeExam(answerKeyText, studentPaperText, mode)
+    const grading = await gradeExam(answerKeyText, studentPaperText)
     const percentage = grading.maxScore > 0 ? Math.round((grading.totalScore / grading.maxScore) * 100) : 0
 
     let record
@@ -209,6 +226,13 @@ export const getGuideJobStatus = (testId: string, jobId: string, userId: string)
     const job = jobStore.getJob(jobId)
     if (!job || job.testId !== testId || job.ownerId !== userId) return Promise.resolve(null)
     return Promise.resolve(job)
+}
+
+// ── Test creation ─────────────────────────────────────────────────────────────
+
+export const createTest = async (name: string, userId: string): Promise<import('./types/exam.interface').ITest> => {
+    if (!name?.trim()) throw new CustomError('Test name is required', 422)
+    return testRepository.create(name.trim(), userId)
 }
 
 // ── Existing exports (unchanged) ──────────────────────────────────────────────

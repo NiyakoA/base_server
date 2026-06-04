@@ -47,6 +47,10 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<Ba
     return res.json() as Promise<BackendResponse<T>>
 }
 
+export async function createTest(name: string): Promise<BackendResponse<{ _id: string; name: string }>> {
+    return apiFetch('/v1/exam/tests', { method: 'POST', body: JSON.stringify({ name }) })
+}
+
 export async function uploadGuides(testId: string, files: File[]): Promise<BackendResponse<{ jobId: string }>> {
     const form = new FormData()
     files.forEach(f => form.append('guides', f))
@@ -55,4 +59,27 @@ export async function uploadGuides(testId: string, files: File[]): Promise<Backe
 
 export async function pollGuideJob(testId: string, jobId: string): Promise<BackendResponse<GuideJobPoll>> {
     return apiFetch(`/v1/exam/tests/${testId}/guides/job/${jobId}`)
+}
+
+export async function ocrPreview(file: File, mode: string): Promise<string> {
+    const form = new FormData()
+    form.append('studentPaper', file)
+    form.append('mode', mode)
+    try {
+        const res = await apiUpload<{ text: string }>('/v1/exam/ocr-preview', form)
+        return res.data.text ?? ''
+    } catch {
+        return ''
+    }
+}
+
+export async function detectStudentName(file: File): Promise<string | null> {
+    const form = new FormData()
+    form.append('studentPaper', file)
+    try {
+        const res = await apiUpload<{ name: string | null }>('/v1/exam/detect-name', form)
+        return res.data.name ?? null
+    } catch {
+        return null
+    }
 }

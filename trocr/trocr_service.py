@@ -27,17 +27,32 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'models/gemini-flash-lite-latest')
 
 HANDWRITING_PROMPT = (
-    'You are scanning a student exam paper to extract their answers. '
-    'Scan the ENTIRE image from top to bottom — every question, every line. Do not stop early.\n\n'
-    'Look for TWO types of student answers:\n'
-    '1. SELECTED CHOICES — letters or options the student circled, filled, bubbled, checked, or crossed (e.g. "A", "B", "True", "Yes")\n'
-    '2. WRITTEN RESPONSES — words, sentences, or numbers the student handwrote in answer spaces\n\n'
+    'You are scanning a student exam paper.\n\n'
+    'FIRST LINE: If a student name appears anywhere on this paper (in a "Name:", "Student:", or similar field, '
+    'or written at the top), output it as the very first line like this:\n'
+    'Name: [student\'s name]\n'
+    'If no name is visible, output: Name: (blank)\n\n'
+    'THEN for each question output ONE line:\n'
+    '[number]. [full question text] → [student\'s answer]\n\n'
+    'The student may have circled/filled/bubbled a choice, written an answer in a blank, or checked an option.\n\n'
     'Rules:\n'
-    '- Cover every question from first to last — do not skip any section of the page\n'
-    '- Ignore pre-printed question text, instructions, and un-marked answer choices\n'
-    '- If a question has nothing circled and nothing written, skip it\n'
-    '- Preserve question numbers where visible (e.g. "1. A", "2. photosynthesis")\n'
-    '- Output ONLY the extracted answers with no commentary or explanation'
+    '- Include the complete pre-printed question text before the →\n'
+    '- After → write exactly what the student wrote or marked:\n'
+    '  * For multiple choice: include both the letter AND the choice text (e.g. "B) Mars", not just "B")\n'
+    '  * For written answers: write exactly what the student wrote\n'
+    '  * For True/False: the student may write "True"/"False" as text, OR circle/fill/check a pre-printed option.\n'
+    '    Write the full word — "True" or "False" — based on whichever they indicated.\n'
+    '    If they wrote "T" write "True"; if "F" write "False".\n'
+    '    Only write (blank) if there is genuinely no indication of their choice.\n'
+    '- If nothing is written or marked for a question, write → (blank)\n'
+    '- Cover every question from top to bottom — do not skip any\n'
+    '- Output nothing else\n\n'
+    'Example output:\n'
+    'Name: John Smith\n'
+    '1. What is the capital of Australia? → Canberra\n'
+    '2. Which planet is the Red Planet? → B) Mars\n'
+    '3. Describe photosynthesis. → Plants use sunlight to convert CO2 and water into glucose\n'
+    '4. True or false: water boils at 100C → True'
 )
 
 if GEMINI_API_KEY:
@@ -128,6 +143,15 @@ def ocr_printed(pil_image: Image.Image, student_paper: bool = False) -> tuple[st
     if is_blank(pil_image):
         return '', 0
 
+    # Student papers in printed mode: use Gemini vision to detect which answers
+    # the student actually marked. Tesseract reads all pre-printed choices and
+    # cannot tell which one was circled — only a vision model can.
+    if student_paper:
+        img_bytes = _prepare_image_bytes(pil_image)
+        result = _extract_printed_marks(img_bytes)
+        if result is not None:
+            return result, 95
+
     pre = preprocess(pil_image)
     # PSM 3 (auto) is more robust than PSM 4 for exam pages with varying layouts.
     text = pytesseract.image_to_string(pre, config='--psm 3').strip()
@@ -147,7 +171,6 @@ def ocr_printed(pil_image: Image.Image, student_paper: bool = False) -> tuple[st
     return text, confidence
 
 
-# Each tile is resized to fit within this dimension before being sent to Gemini.
 GEMINI_MAX_DIM = 2048
 
 def _prepare_image_bytes(pil_image: Image.Image) -> bytes:
@@ -173,29 +196,54 @@ def _gemini_call(contents: list) -> object:
             err_str = str(e)
             is_transient = any(sig in err_str for sig in _TRANSIENT_SIGNALS)
             if is_transient and attempt < _MAX_RETRIES - 1:
-                time.sleep(2 ** attempt)  # 1s, 2s — fail fast, not slow
+                time.sleep(2 ** attempt)
                 continue
             raise
 
 
-_STUDENT_WROTE_PROMPT = (
-    'Look at this student exam paper image.\n'
-    'Did the student physically write or mark ANYTHING by hand — circled answers, filled bubbles, written words, any pen/pencil marks?\n'
-    'Reply with ONLY the single word YES or NO.'
+_PRINTED_MARK_PROMPT = (
+    'Read this printed exam paper.\n\n'
+    'FIRST LINE: If a student name appears anywhere on this paper (in a "Name:", "Student:", or similar field, '
+    'or written at the top), output it as the very first line like this:\n'
+    'Name: [student\'s name]\n'
+    'If no name is visible, output: Name: (blank)\n\n'
+    'THEN for each question output ONE line:\n'
+    '[number]. [full question text] → [student\'s marked answer]\n\n'
+    'The student marks answers by circling a letter, filling/shading a bubble, '
+    'writing in a blank, crossing out or checking an option.\n\n'
+    'Rules:\n'
+    '- Include the complete question text (not the pre-printed answer choices)\n'
+    '- After → write the FULL TEXT of what the student marked:\n'
+    '  * For multiple choice: include both the letter AND the choice text (e.g. "C) Canberra", not just "C")\n'
+    '  * For written answers: write exactly what the student wrote\n'
+    '  * For True/False: identify which pre-printed option has a student mark — a circle, fill, shade,\n'
+    '    underline, cross, or check. Write the full word of that option ("True" or "False").\n'
+    '    If the student wrote "T" write "True"; if "F" write "False".\n'
+    '    Only write (blank) if there is genuinely no indication of their answer.\n'
+    '- If nothing is marked for a question, write → (blank)\n'
+    '- Cover every question on the page from top to bottom\n'
+    '- Output nothing else\n\n'
+    'Example output:\n'
+    'Name: John Smith\n'
+    '1. What is the capital of Australia? → C) Canberra\n'
+    '2. Which planet is the Red Planet? → B) Mars\n'
+    '3. Describe photosynthesis. → Plants convert sunlight to glucose\n'
+    '4. True or false: water boils at 100C → True'
 )
 
-def _student_wrote_anything(img_bytes: bytes) -> bool:
-    """Ask Gemini whether the student made any marks — used by printed mode to
-    avoid Tesseract reading pre-printed text on a blank paper as answers.
-    Fails open (returns True) when quota is exceeded so grading still works."""
+def _extract_printed_marks(img_bytes: bytes) -> str | None:
+    """Use Gemini vision to detect which answers the student marked on a printed exam.
+    Returns extracted text or None if Gemini is unavailable/quota exceeded."""
+    if not gemini_client:
+        return None
     try:
         response = _gemini_call([
-            genai_types.Part.from_text(text=_STUDENT_WROTE_PROMPT),
+            genai_types.Part.from_text(text=_PRINTED_MARK_PROMPT),
             genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
         ])
-        return response.text.strip().upper().startswith('YES')
+        return postprocess(response.text)
     except Exception:
-        return True  # quota/error: assume marks present, let Tesseract run
+        return None  # fall through to Tesseract
 
 
 def _gemini_extract(img_bytes: bytes) -> str:
@@ -285,6 +333,7 @@ def extract():
 
     file = request.files.get('image')
     if not file:
+        print(f'DEBUG /extract: files={list(request.files.keys())} form={list(request.form.keys())} ct={request.content_type!r}', flush=True)
         return jsonify({'error': 'No image provided'}), 422
 
     raw = file.read()
@@ -293,11 +342,13 @@ def extract():
     try:
         images = pdf_to_images(raw) if is_pdf else [Image.open(io.BytesIO(raw)).convert('RGB')]
     except Exception as e:
+        print(f'DEBUG /extract parse error: {e!r} raw_len={len(raw)} is_pdf={is_pdf} first_bytes={raw[:8]!r}', flush=True)
         return jsonify({'error': f'Could not read file: {e}'}), 422
 
     try:
         texts, confs = [], []
-        fn = ocr_printed if mode == 'printed' else ocr_handwritten
+        # Non-student documents (answer keys) are always printed — use Tesseract regardless of mode
+        fn = (ocr_printed if mode == 'printed' else ocr_handwritten) if student_paper else ocr_printed
         for img in images:
             t, c = fn(img, student_paper=student_paper)
             if t:
@@ -366,6 +417,52 @@ def extract_guide():
         'readableCount': readable_count,
         'processingTimeMs': int((time.time() - start) * 1000)
     })
+
+
+_NAME_PROMPT = (
+    'Look at this exam paper image. Find the student name field — it is usually near the top, '
+    'labeled something like "Name:", "Student:", "Student Name:", "Nombre:", etc.\n'
+    'Return ONLY the student\'s handwritten or typed name, exactly as written.\n'
+    'If the name field is blank, not visible, or you cannot find one, return exactly: (blank)\n'
+    'Output nothing else.'
+)
+
+
+@app.route('/detect-name', methods=['POST'])
+def detect_name():
+    if not gemini_client:
+        return jsonify({'name': None}), 200
+
+    file = request.files.get('image')
+    if not file:
+        return jsonify({'error': 'No image provided'}), 422
+
+    raw = file.read()
+    is_pdf = (file.mimetype == 'application/pdf') or raw[:4] == b'%PDF'
+
+    try:
+        if is_pdf:
+            images = pdf_to_images(raw)
+            pil_image = images[0] if images else None
+        else:
+            pil_image = Image.open(io.BytesIO(raw)).convert('RGB')
+    except Exception as e:
+        return jsonify({'error': f'Could not read file: {e}'}), 422
+
+    if pil_image is None:
+        return jsonify({'name': None}), 200
+
+    try:
+        img_bytes = _prepare_image_bytes(pil_image)
+        response = _gemini_call([
+            genai_types.Part.from_text(text=_NAME_PROMPT),
+            genai_types.Part.from_bytes(data=img_bytes, mime_type='image/jpeg'),
+        ])
+        raw_name = (response.text or '').strip()
+        name = None if not raw_name or raw_name.lower() in ('(blank)', 'blank') else raw_name
+        return jsonify({'name': name}), 200
+    except Exception:
+        return jsonify({'name': None}), 200
 
 
 if __name__ == '__main__':

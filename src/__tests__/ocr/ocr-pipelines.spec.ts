@@ -41,7 +41,7 @@ describe('extractText', () => {
     })
 
     it('throws 422 when the TrOCR service reports no image provided', async () => {
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 422 })
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 422, json: () => Promise.resolve({ error: 'No image provided' }) })
 
         await expect(extractText(fakeBuffer)).rejects.toMatchObject({
             message: 'No image provided',
@@ -50,7 +50,7 @@ describe('extractText', () => {
     })
 
     it('throws 500 when the TrOCR service returns an error response', async () => {
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 500 })
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 500, json: () => Promise.resolve({}) })
 
         await expect(extractText(fakeBuffer)).rejects.toMatchObject({
             statusCode: 500

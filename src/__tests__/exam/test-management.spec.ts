@@ -24,6 +24,8 @@ const mockTestCreate = jest.fn()
 const mockTestFindById = jest.fn()
 const mockListWithCounts = jest.fn()
 const mockGetResults = jest.fn()
+const mockSaveAnswerKey = jest.fn().mockResolvedValue(undefined)
+const mockGetAnswerKey = jest.fn().mockResolvedValue(Buffer.from('key'))
 
 jest.mock('../../APIs/exam/test.repository', () => ({
     __esModule: true,
@@ -35,7 +37,11 @@ jest.mock('../../APIs/exam/test.repository', () => ({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         listWithCounts: (...args: unknown[]) => mockListWithCounts(...args),
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        getResults: (...args: unknown[]) => mockGetResults(...args)
+        getResults: (...args: unknown[]) => mockGetResults(...args),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        saveAnswerKey: (...args: unknown[]) => mockSaveAnswerKey(...args),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        getAnswerKey: (...args: unknown[]) => mockGetAnswerKey(...args)
     }
 }))
 
