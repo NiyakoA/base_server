@@ -210,6 +210,7 @@ function selectPages(scored: ScoredPage[], minHits = MIN_RAW_HITS, cap = MAX_PAG
         .filter((s) => s.rawHits >= minHits)
         .sort((a, b) => b.score - a.score)
         .slice(0, cap)
+    // one qualifying page is sufficient; Gemini keyword fallback only fires when none qualify
     if (qualifying.length >= 1) return { pages: qualifying.map((s) => s.page), belowThreshold: false }
     const top2 = [...scored].sort((a, b) => b.score - a.score).slice(0, 2)
     return { pages: top2.map((s) => s.page), belowThreshold: true }
@@ -301,6 +302,8 @@ ${refBlocks}
 
 Instructions:
 - For each question, read the reference pages to identify which answer option is correct
+- Do not use prior knowledge — if the reference pages do not clearly support an answer, note 'unverified against guide' in feedback
+- Cover EVERY numbered question in the student paper — do not skip any
 - The correctAnswer must come solely from the reference pages — never from what the student wrote
 - The student's answer is after the →; copy it verbatim. If blank or missing, use "" and mark wrong
 - Assign score: "correct", "partial", or "wrong". correct=1, partial=0.5, wrong=0
