@@ -1,9 +1,16 @@
 // src/__tests__/services/guidedGrading.test.ts
 jest.mock('@google/genai', () => ({ GoogleGenAI: jest.fn().mockImplementation(() => ({ models: { generateContent: jest.fn() } })) }))
 jest.mock('../../handlers/logger', () => ({ default: { info: jest.fn(), error: jest.fn() } }))
+jest.mock('../../services/grading', () => ({
+    callGeminiWithBackoff: jest.fn(),
 
-import { extractLocalKeywords, scorePages, computeIdf, trimToContextBudget } from '../../services/guidedGrading'
+    hardenGradingJson: jest.fn((raw: string) => JSON.parse(raw) as unknown),
+    parseKeywordMap: jest.fn().mockReturnValue({})
+}))
+
+import { extractLocalKeywords, scorePages, computeIdf, trimToContextBudget, gradeExamGuided } from '../../services/guidedGrading'
 import { IGuidePage } from '../../APIs/exam/types/exam.interface'
+import { callGeminiWithBackoff } from '../../services/grading'
 
 const makePage = (pageNumber: number, text: string, source = 'guide.pdf'): IGuidePage => ({ pageNumber, text, source })
 
@@ -69,5 +76,42 @@ describe('trimToContextBudget', () => {
         // Both questions each keep their 1 page even though total > budget
         expect(result[0].pages.length).toBe(1)
         expect(result[1].pages.length).toBe(1)
+    })
+})
+
+describe('gradeExamGuided — single-pass', () => {
+    beforeEach(() => {
+        ;(callGeminiWithBackoff as jest.Mock).mockClear()
+    })
+
+    it('sends all options and guide pages to Gemini in one call (no pre-extraction)', async () => {
+        const mockCall = callGeminiWithBackoff as jest.Mock
+        mockCall.mockResolvedValue(
+            JSON.stringify({
+                totalScore: 1,
+                maxScore: 1,
+                questions: [{ number: 1, correctAnswer: 'B) Mars', studentAnswer: 'B) Mars', score: 'correct', feedback: '' }]
+            })
+        )
+
+        const guidePages = [{ pageNumber: 1, text: 'Mars is called the Red Planet because of its reddish appearance.', source: 'guide.pdf' }]
+        const studentPaper = '1. Which planet is the Red Planet? A) Venus B) Mars C) Jupiter D) Saturn → B) Mars'
+
+        await gradeExamGuided(guidePages, studentPaper)
+
+        // Should call Gemini exactly once (single-pass)
+        expect(mockCall).toHaveBeenCalledTimes(1)
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const prompt: string = mockCall.mock.calls[0][0] as string
+        // Prompt must contain all four options
+        expect(prompt).toContain('A) Venus')
+        expect(prompt).toContain('B) Mars')
+        expect(prompt).toContain('C) Jupiter')
+        expect(prompt).toContain('D) Saturn')
+        // Prompt must contain guide content
+        expect(prompt).toContain('Red Planet')
+        // Prompt must NOT contain a pre-extracted correct answer header
+        expect(prompt).not.toContain('CORRECT ANSWERS (derived')
     })
 })
