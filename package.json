@@ -25,9 +25,9 @@
     "license": "ISC",
     "description": "",
     "lint-staged": {
-        "*.ts": [
-            "npm run lint:fix",
-            "npm run format:fix"
+        "src/**/*.ts": [
+            "eslint --fix",
+            "prettier --write"
         ]
     },
     "devDependencies": {
@@ -57,6 +57,7 @@
         "jest": "^29.7.0",
         "lint-staged": "^15.2.10",
         "nodemon": "^3.1.7",
+        "playwright": "^1.60.0",
         "prettier": "3.3.3",
         "supertest": "^7.0.0",
         "ts-jest": "^29.2.5",
@@ -65,6 +66,8 @@
         "typescript-eslint": "^8.7.0"
     },
     "dependencies": {
+        "@google/genai": "^2.5.0",
+        "@modelcontextprotocol/sdk": "^1.29.0",
         "bcrypt": "^5.1.1",
         "chalk": "^5.3.0",
         "colorette": "^2.0.20",
@@ -83,6 +86,7 @@
         "libphonenumber-js": "^1.11.9",
         "mongoose": "^8.6.3",
         "multer": "^2.1.1",
+        "node-fetch": "^3.3.2",
         "ora": "^8.1.0",
         "progress": "^2.0.3",
         "rate-limiter-flexible": "^5.0.3",
